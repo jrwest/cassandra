@@ -25,6 +25,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.apache.cassandra.cql3.CQL3Type;
+import org.apache.cassandra.db.bitset.GrowOnlyBitset;
 import org.apache.cassandra.db.marshal.*;
 
 /**
@@ -59,6 +60,11 @@ public abstract class AggregateFcts
         functions.add(avgFunctionForDecimal);
         functions.add(avgFunctionForVarint);
         functions.add(avgFunctionForCounter);
+
+        // bitset functions
+        functions.add(orFunctionForBitset);
+        functions.add(andFunctionForBitset);
+        functions.add(xorFunctionForBitset);
 
         // count, max, and min for all standard types
         for (CQL3Type type : CQL3Type.Native.values())
@@ -969,6 +975,95 @@ public abstract class AggregateFcts
             count++;
             Number number = LongType.instance.compose(value);
             sum += number.longValue();
+        }
+    }
+
+    public static final AggregateFunction orFunctionForBitset =
+    new NativeAggregateFunction("bor", BitsetType.instance, BitsetType.instance)
+    {
+        public Aggregate newAggregate()
+        {
+            return new BitsetOrAggregate();
+        }
+    };
+
+    public static final AggregateFunction andFunctionForBitset =
+    new NativeAggregateFunction("band", BitsetType.instance, BitsetType.instance)
+    {
+        public Aggregate newAggregate()
+        {
+            return new BitsetAndAggregate();
+        }
+    };
+
+    public static final AggregateFunction xorFunctionForBitset =
+    new NativeAggregateFunction("bxor", BitsetType.instance, BitsetType.instance)
+    {
+        public Aggregate newAggregate()
+        {
+            return new BitsetXOrAggregate();
+        }
+    };
+
+
+    private static abstract class AbstractBitsetAggregate implements AggregateFunction.Aggregate
+    {
+        protected GrowOnlyBitset bitset;
+
+        public void reset()
+        {
+            bitset = null;
+        }
+
+        public ByteBuffer compute(int protocolVersion)
+        {
+            return bitset.serialize();
+        }
+
+        public void addInput(int protocolVersion, List<ByteBuffer> values)
+        {
+            ByteBuffer value = values.get(0);
+            if (value == null)
+                return;
+
+            GrowOnlyBitset bitset = GrowOnlyBitset.deserialize(value);
+            if (this.bitset == null)
+                this.bitset = bitset;
+            else
+                addBitset(bitset);
+        }
+
+        protected abstract void addBitset(GrowOnlyBitset bitset);
+
+    }
+
+    private static class BitsetOrAggregate extends AbstractBitsetAggregate
+    {
+        protected void addBitset(GrowOnlyBitset bitset)
+        {
+            this.bitset.or(bitset);
+        }
+    }
+
+    private static class BitsetAndAggregate extends AbstractBitsetAggregate
+    {
+
+        private BitsetAndAggregate()
+        {
+            this.bitset = null;
+        }
+
+        protected void addBitset(GrowOnlyBitset bitset)
+        {
+            this.bitset.and(bitset);
+        }
+    }
+
+    private static class BitsetXOrAggregate extends AbstractBitsetAggregate
+    {
+        protected void addBitset(GrowOnlyBitset bitset)
+        {
+            this.bitset.xor(bitset);
         }
     }
 }

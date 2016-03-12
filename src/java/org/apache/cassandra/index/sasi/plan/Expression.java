@@ -76,6 +76,11 @@ public class Expression
                 case LIKE_MATCHES:
                     return MATCH;
 
+                case CONTAINS:
+                    // want to seqch the index as if we are searching for equality on this value
+                    // because we index bitsets value by value
+                    return EQ;
+
                 default:
                     throw new IllegalArgumentException("unknown operator: " + operator);
             }
@@ -144,6 +149,7 @@ public class Expression
             case LIKE_SUFFIX:
             case LIKE_CONTAINS:
             case LIKE_MATCHES:
+            case CONTAINS:
             case EQ:
                 lower = new Bound(value, true);
                 upper = lower;

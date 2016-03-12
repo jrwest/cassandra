@@ -24,7 +24,9 @@ import java.util.*;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.ColumnDefinition.Kind;
 import org.apache.cassandra.cql3.Operator;
+import org.apache.cassandra.db.bitset.GrowOnlyBitset;
 import org.apache.cassandra.db.filter.RowFilter;
+import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.Unfiltered;
 import org.apache.cassandra.index.sasi.conf.ColumnIndex;
@@ -208,37 +210,62 @@ public class Operation extends RangeIterator<Long, Token>
             if (column.kind == Kind.PARTITION_KEY)
                 continue;
 
-            ByteBuffer value = ColumnIndex.getValueOf(column, (Row) row, now);
-            boolean isMissingColumn = value == null;
-
-            if (!allowMissingColumns && isMissingColumn)
-                throw new IllegalStateException("All indexed columns should be included into the column slice, missing: " + column);
-
             boolean isMatch = false;
-            // If there is a column with multiple expressions that effectively means an OR
-            // e.g. comment = 'x y z' could be split into 'comment' EQ 'x', 'comment' EQ 'y', 'comment' EQ 'z'
-            // by analyzer, in situation like that we only need to check if at least one of expressions matches,
-            // and there is no hit on the NOT_EQ (if any) which are always at the end of the filter list.
-            // Loop always starts from the end of the list, which makes it possible to break after the last
-            // NOT_EQ condition on first EQ/RANGE condition satisfied, instead of checking every
-            // single expression in the column filter list.
-            List<Expression> filters = expressions.get(column);
-            for (int i = filters.size() - 1; i >= 0; i--)
+            if (column.type.isBitset())
             {
-                Expression expression = filters.get(i);
-                isMatch = !isMissingColumn && expression.isSatisfiedBy(value);
-                if (expression.getOp() == Op.NOT_EQ)
+                // contains is always 1 expression
+                // TODO (jwest): the above comment may not be true if we add support for CONTAINS (1, 2, 3) which could have OR semantics.
+                Cell cell = ((Row) row).getCell(column);
+                if (!allowMissingColumns && cell == null)
+                    throw new IllegalStateException("All indexed columns should be included into the column slice, missing: " + column);
+
+                isMatch = cell == null ? false : GrowOnlyBitset.deserialize(cell.value()).satisifies(expressions.get(column).get(0));
+            } else
+            {
+                Iterator<ByteBuffer> values = ColumnIndex.getValueOf(column, (Row) row, now);
+                if (!allowMissingColumns && !values.hasNext())
+                    throw new IllegalStateException("All indexed columns should be included into the column slice, missing: " + column);
+
+                int vidx = 0;
+                while (values.hasNext())
                 {
-                    // since this is NOT_EQ operation we have to
-                    // inverse match flag (to check against other expressions),
-                    // and break in case of negative inverse because that means
-                    // that it's a positive hit on the not-eq clause.
-                    isMatch = !isMatch;
-                    if (!isMatch)
+                    ByteBuffer value = values.next();
+                    // If there is a column with multiple expressions that effectively means an OR
+                    // e.g. comment = 'x y z' could be split into 'comment' EQ 'x', 'comment' EQ 'y', 'comment' EQ 'z'
+                    // by analyzer, in situation like that we only need to check if at least one of expressions matches,
+                    // and there is no hit on the NOT_EQ (if any) which are always at the end of the filter list.
+                    // Loop always starts from the end of the list, which makes it possible to break after the last
+                    // NOT_EQ condition on first EQ/RANGE condition satisfied, instead of checking every
+                    // single expression in the column filter list.
+                    List<Expression> filters = expressions.get(column);
+                    for (int i = filters.size() - 1; i >= 0; i--)
+                    {
+                        Expression expression = filters.get(i);
+                        isMatch = expression.isSatisfiedBy(value);
+                        if (expression.getOp() == Op.NOT_EQ)
+                        {
+                            // since this is NOT_EQ operation we have to
+                            // inverse match flag (to check against other expressions),
+                            // and break in case of negative inverse because that means
+                            // that it's a positive hit on the not-eq clause.
+                            isMatch = !isMatch;
+                            if (!isMatch)
+                                break;
+                        } // if it was a match on EQ/RANGE or column is missing
+                        else if (isMatch)
+                            break;
+                    }
+
+                    if (vidx++ == 0)
+                    {
+                        result = isMatch;
+                        continue;
+                    }
+
+                    result = OperationType.AND.apply(result, isMatch);
+                    if (!result)
                         break;
-                } // if it was a match on EQ/RANGE or column is missing
-                else if (isMatch || isMissingColumn)
-                    break;
+                }
             }
 
             if (idx++ == 0)
@@ -248,8 +275,7 @@ public class Operation extends RangeIterator<Long, Token>
             }
 
             result = op.apply(result, isMatch);
-
-            // exit early because we already got a single false
+                // exit early because we already got a single false
             if (op == OperationType.AND && !result)
                 return false;
         }

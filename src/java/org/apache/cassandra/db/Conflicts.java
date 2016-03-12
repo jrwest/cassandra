@@ -19,7 +19,9 @@ package org.apache.cassandra.db;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.db.bitset.GrowOnlyBitset;
 import org.apache.cassandra.db.context.CounterContext;
+import org.apache.cassandra.db.rows.Cell;
 
 public abstract class Conflicts
 {
@@ -74,6 +76,23 @@ public abstract class Conflicts
     public static ByteBuffer mergeCounterValues(ByteBuffer left, ByteBuffer right)
     {
         return CounterContext.instance().merge(left, right);
+    }
+
+    public static Resolution resolveBitset(Cell c1, Cell c2)
+    {
+        if (c1.isTombstone())
+            return Resolution.LEFT_WINS;
+        else if (c2.isTombstone())
+            return Resolution.RIGHT_WINS;
+        else
+            return Resolution.MERGE;
+    }
+
+    public static ByteBuffer mergeBitsetValues(ByteBuffer left, ByteBuffer right)
+    {
+        GrowOnlyBitset bitset1 = GrowOnlyBitset.deserialize(left);
+        GrowOnlyBitset bitset2 = GrowOnlyBitset.deserialize(right);
+        return bitset1.merge(bitset2).serialize();
     }
 
 }

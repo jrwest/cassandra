@@ -55,6 +55,7 @@ public interface CQL3Type
     {
         ASCII       (AsciiType.instance),
         BIGINT      (LongType.instance),
+        BITSET      (BitsetType.instance),
         BLOB        (BytesType.instance),
         BOOLEAN     (BooleanType.instance),
         COUNTER     (CounterColumnType.instance),

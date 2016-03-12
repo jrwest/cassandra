@@ -26,6 +26,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.CounterColumnType;
+import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.marshal.ReversedType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -151,6 +152,9 @@ public abstract class Constants
 
                 if (validator instanceof CounterColumnType)
                     return LongType.instance.fromString(text);
+                else if (validator.isBitset())
+                    return Int32Type.instance.fromString(text);
+
                 return validator.fromString(text);
             }
             catch (MarshalException e)
@@ -199,6 +203,7 @@ public abstract class Constants
                         case TIMESTAMP:
                         case TINYINT:
                         case VARINT:
+                        case BITSET:
                             return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
                     }
                     break;

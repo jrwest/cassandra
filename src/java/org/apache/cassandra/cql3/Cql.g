@@ -1560,6 +1560,7 @@ comparatorType returns [CQL3Type.Raw t]
 native_type returns [CQL3Type t]
     : K_ASCII     { $t = CQL3Type.Native.ASCII; }
     | K_BIGINT    { $t = CQL3Type.Native.BIGINT; }
+    | K_BITSET    { $t = CQL3Type.Native.BITSET; }
     | K_BLOB      { $t = CQL3Type.Native.BLOB; }
     | K_BOOLEAN   { $t = CQL3Type.Native.BOOLEAN; }
     | K_COUNTER   { $t = CQL3Type.Native.COUNTER; }
@@ -1760,6 +1761,7 @@ K_OPTIONS:     O P T I O N S;
 K_CLUSTERING:  C L U S T E R I N G;
 K_ASCII:       A S C I I;
 K_BIGINT:      B I G I N T;
+K_BITSET:      B I T S E T;
 K_BLOB:        B L O B;
 K_BOOLEAN:     B O O L E A N;
 K_COUNTER:     C O U N T E R;

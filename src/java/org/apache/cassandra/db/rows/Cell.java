@@ -66,6 +66,8 @@ public abstract class Cell extends ColumnData
      */
     public abstract boolean isCounterCell();
 
+    public abstract boolean isBitsetCell();
+
     /**
      * The cell value.
      *

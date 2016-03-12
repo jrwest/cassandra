@@ -23,8 +23,6 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import com.google.common.base.Joiner;
-
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.DecoratedKey;
@@ -66,7 +64,7 @@ public abstract class Sets
             if (receiver.type instanceof MapType && elements.isEmpty())
                 return new Maps.Value(Collections.<ByteBuffer, ByteBuffer>emptyMap());
 
-            ColumnSpecification valueSpec = Sets.valueSpecOf(receiver);
+            ColumnSpecification valueSpec = receiver.type.isBitset() ? Bitsets.valueSpecOf(receiver) : Sets.valueSpecOf(receiver);
             Set<Term> values = new HashSet<>(elements.size());
             boolean allTerminal = true;
             for (Term.Raw rt : elements)
@@ -81,13 +79,13 @@ public abstract class Sets
 
                 values.add(t);
             }
-            DelayedValue value = new DelayedValue(((SetType)receiver.type).getElementsType(), values);
+            DelayedValue value = new DelayedValue(valueSpec.type, values);
             return allTerminal ? value.bind(QueryOptions.DEFAULT) : value;
         }
 
         private void validateAssignableTo(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
-            if (!(receiver.type instanceof SetType))
+            if (!receiver.type.isBitset() && !(receiver.type instanceof SetType))
             {
                 // We've parsed empty maps as a set literal to break the ambiguity so
                 // handle that case now
@@ -97,7 +95,7 @@ public abstract class Sets
                 throw new InvalidRequestException(String.format("Invalid set literal for %s of type %s", receiver.name, receiver.type.asCQL3Type()));
             }
 
-            ColumnSpecification valueSpec = Sets.valueSpecOf(receiver);
+            ColumnSpecification valueSpec = receiver.type.isBitset() ? Bitsets.valueSpecOf(receiver) : Sets.valueSpecOf(receiver);
             for (Term.Raw rt : elements)
             {
                 if (!rt.testAssignment(keyspace, valueSpec).isAssignable())

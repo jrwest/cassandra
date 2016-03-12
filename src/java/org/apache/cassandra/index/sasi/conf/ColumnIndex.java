@@ -20,6 +20,7 @@ package org.apache.cassandra.index.sasi.conf;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,8 +33,10 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Memtable;
+import org.apache.cassandra.db.bitset.GrowOnlyBitset;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.AsciiType;
+import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
@@ -100,7 +103,13 @@ public class ColumnIndex
 
     public long index(DecoratedKey key, Row row)
     {
-        return getCurrentMemtable().index(key, getValueOf(column, row, FBUtilities.nowInSeconds()));
+        Iterator<ByteBuffer> values = getValueOf(column, row, FBUtilities.nowInSeconds());
+        // TODO (jwest): the comment below may not be true for empty bitset
+        long lastMemtableSize = 0; // set to 0 but we will always iterate once
+        while (values.hasNext())
+            lastMemtableSize = getCurrentMemtable().index(key, values.next());
+
+        return lastMemtableSize;
     }
 
     public void switchMemtable()
@@ -153,7 +162,8 @@ public class ColumnIndex
 
     public AbstractType<?> getValidator()
     {
-        return column.cellValueType();
+        AbstractType<?> validator = column.cellValueType();
+        return validator.isBitset() ? Int32Type.instance : validator;
     }
 
     public Component getComponent()
@@ -219,16 +229,22 @@ public class ColumnIndex
 
     }
 
-    public static ByteBuffer getValueOf(ColumnDefinition column, Row row, int nowInSecs)
+    public static Iterator<ByteBuffer> getValueOf(ColumnDefinition column, Row row, int nowInSecs)
     {
         switch (column.kind)
         {
             case CLUSTERING:
-                return row.clustering().get(column.position());
+                return Collections.singletonList(row.clustering().get(column.position())).iterator();
 
             case REGULAR:
                 Cell cell = row.getCell(column);
-                return cell == null || !cell.isLive(nowInSecs) ? null : cell.value();
+                if (cell.isBitsetCell())
+                    return GrowOnlyBitset.deserialize(cell.value()).bufferIterator();
+
+                Collection<ByteBuffer> res = cell == null || !cell.isLive(nowInSecs)
+                                             ? Collections.<ByteBuffer>emptyList()
+                                             : Collections.singletonList(cell.value());
+                return res.iterator();
 
             default:
                 return null;

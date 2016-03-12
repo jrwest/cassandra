@@ -21,6 +21,7 @@ import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
@@ -116,19 +117,23 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
         Row row = (Row) unfiltered;
 
         supportedIndexes.keySet().forEach((column) -> {
-            ByteBuffer value = ColumnIndex.getValueOf(column, row, nowInSec);
-            if (value == null)
-                return;
+            Iterator<ByteBuffer> values = ColumnIndex.getValueOf(column, row, nowInSec);
+            while (values.hasNext())
+            {
+                ByteBuffer value = values.next();
+                if (value == null)
+                    return;
 
-            ColumnIndex columnIndex = supportedIndexes.get(column);
-            if (columnIndex == null)
-                return;
+                ColumnIndex columnIndex = supportedIndexes.get(column);
+                if (columnIndex == null)
+                    return;
 
-            Index index = indexes.get(column);
-            if (index == null)
-                indexes.put(column, (index = new Index(columnIndex)));
+                Index index = indexes.get(column);
+                if (index == null)
+                    indexes.put(column, (index = new Index(columnIndex)));
 
-            index.add(value.duplicate(), currentKey, currentKeyPosition);
+                index.add(value.duplicate(), currentKey, currentKeyPosition);
+            }
         });
     }
 

@@ -220,6 +220,11 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
         return false;
     }
 
+    public boolean isBitset()
+    {
+        return false;
+    }
+
     public boolean isFrozenCollection()
     {
         return isCollection() && !isMultiCell();

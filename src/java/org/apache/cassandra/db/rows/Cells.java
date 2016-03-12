@@ -153,6 +153,21 @@ public abstract class Cells
                         return new BufferCell(c1.column(), timestamp, Cell.NO_TTL, Cell.NO_DELETION_TIME, merged, c1.path());
             }
         }
+        else if (c1.isBitsetCell() || c2.isBitsetCell())
+        {
+            Conflicts.Resolution res = Conflicts.resolveBitset(c1, c2);
+            switch (res)
+            {
+                case LEFT_WINS:
+                    return c1;
+                case RIGHT_WINS:
+                    return c2;
+                default:
+                    ByteBuffer merged = Conflicts.mergeBitsetValues(c1.value(), c2.value());
+                    long timestamp = Math.max(c1.timestamp(), c2.timestamp());
+                    return BufferCell.live(c1.column(), timestamp, merged);
+            }
+        }
 
         Conflicts.Resolution res = Conflicts.resolveRegular(c1.timestamp(),
                                                             c1.isLive(nowInSec),

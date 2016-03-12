@@ -164,8 +164,9 @@ public abstract class Operation
 
             if (receiver.type instanceof CounterColumnType)
                 throw new InvalidRequestException(String.format("Cannot set the value of counter column %s (counters can only be incremented/decremented, not set)", receiver.name));
-
-            if (!(receiver.type.isCollection()))
+            else if (receiver.type.isBitset())
+                return new Bitsets.Setter(receiver, v);
+            else if (!(receiver.type.isCollection()))
                 return new Constants.Setter(receiver, v);
 
             switch (((CollectionType)receiver.type).kind)
@@ -255,9 +256,11 @@ public abstract class Operation
 
             if (!(receiver.type instanceof CollectionType))
             {
-                if (!(receiver.type instanceof CounterColumnType))
-                    throw new InvalidRequestException(String.format("Invalid operation (%s) for non counter column %s", toString(receiver), receiver.name));
-                return new Constants.Adder(receiver, v);
+
+                if (!receiver.type.isBitset() && !(receiver.type instanceof CounterColumnType))
+                    throw new InvalidRequestException(String.format("Invalid operation (%s) for non counter or bitset column %s", toString(receiver), receiver.name));
+
+                return receiver.type.isBitset() ? new Bitsets.Adder(receiver, v) : new Constants.Adder(receiver, v);
             }
             else if (!(receiver.type.isMultiCell()))
                 throw new InvalidRequestException(String.format("Invalid operation (%s) for frozen collection column %s", toString(receiver), receiver.name));

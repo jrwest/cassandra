@@ -49,6 +49,11 @@ public abstract class AbstractCell extends Cell
         return !isTombstone() && column.cellValueType().isCounter();
     }
 
+    public boolean isBitsetCell()
+    {
+        return column.cellValueType().isBitset();
+    }
+
     public boolean isLive(int nowInSec)
     {
         return localDeletionTime() == NO_DELETION_TIME || (ttl() != NO_TTL && nowInSec < localDeletionTime());
