@@ -162,7 +162,7 @@ public class OnDiskIndexBuilder
         TokenTreeBuilder tokens = terms.get(term);
         if (tokens == null)
         {
-            terms.put(term, (tokens = new TokenTreeBuilder()));
+            terms.put(term, (tokens = new DynamicTokenTreeBuilder()));
 
             // on-heap size estimates from jol
             // 64 bytes for TTB + 48 bytes for TreeMap in TTB + size bytes for the term (map key)
@@ -455,7 +455,7 @@ public class OnDiskIndexBuilder
         public DataBuilderLevel(SequentialWriter out, MutableBlock<InMemoryDataTerm> block)
         {
             super(out, block);
-            superBlockTree = new TokenTreeBuilder();
+            superBlockTree = new DynamicTokenTreeBuilder();
         }
 
         public InMemoryPointerTerm add(InMemoryDataTerm term) throws IOException
@@ -466,20 +466,20 @@ public class OnDiskIndexBuilder
                 dataBlocksCnt++;
                 flushSuperBlock(false);
             }
-            superBlockTree.add(term.keys.getTokens());
+            superBlockTree.add(term.keys);
             return ptr;
         }
 
         public void flushSuperBlock(boolean force) throws IOException
         {
-            if (dataBlocksCnt == SUPER_BLOCK_SIZE || (force && !superBlockTree.getTokens().isEmpty()))
+            if (dataBlocksCnt == SUPER_BLOCK_SIZE || (force && !superBlockTree.isEmpty()))
             {
                 superBlockOffsets.add(out.position());
                 superBlockTree.finish().write(out);
                 alignToBlock(out);
 
                 dataBlocksCnt = 0;
-                superBlockTree = new TokenTreeBuilder();
+                superBlockTree = new DynamicTokenTreeBuilder();
             }
         }
 
@@ -561,7 +561,7 @@ public class OnDiskIndexBuilder
         public MutableDataBlock(Mode mode)
         {
             this.mode = mode;
-            this.combinedIndex = new TokenTreeBuilder();
+            this.combinedIndex = new DynamicTokenTreeBuilder();
         }
 
         protected void addInternal(InMemoryDataTerm term) throws IOException
@@ -582,7 +582,7 @@ public class OnDiskIndexBuilder
             }
 
             if (mode == Mode.SPARSE)
-                combinedIndex.add(keys.getTokens());
+                combinedIndex.add(keys);
         }
 
         protected int sizeAfter(InMemoryDataTerm element)
@@ -610,7 +610,7 @@ public class OnDiskIndexBuilder
             alignToBlock(out);
 
             containers.clear();
-            combinedIndex = new TokenTreeBuilder();
+            combinedIndex = new DynamicTokenTreeBuilder();
 
             offset = 0;
             sparseValueTerms = 0;
