@@ -230,6 +230,9 @@ public class TrieMemIndex extends MemIndex
                 case CONTAINS:
                     return trie.getValuesForKeysContaining(value);
 
+                case PREFIX:
+                    return trie.getValuesForKeysContaining(value);
+
                 default:
                     throw new UnsupportedOperationException(String.format("operation %s is not supported.", operator));
             }
