@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.index.sasi;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -85,7 +86,17 @@ public class SASIIndexTest
     @BeforeClass
     public static void loadSchema() throws ConfigurationException
     {
-        System.setProperty("cassandra.config", "cassandra-murmur.yaml");
+        String existingConfig = System.getProperty("cassandra.config");
+        // this dance makes intellij happy but doesn't seem necessary for mvn
+        if (existingConfig != null)
+        {
+            File existingFile = new File(existingConfig);
+            System.setProperty("cassandra.config", existingFile.getParent() + "/cassandra-murmur.yaml");
+        }
+        else
+        {
+            System.setProperty("cassandra.config", "file://cassandra-murmur.yaml");
+        }
         SchemaLoader.loadSchema();
         MigrationManager.announceNewKeyspace(KeyspaceMetadata.create(KS_NAME,
                                                                      KeyspaceParams.simpleTransient(1),
@@ -1774,30 +1785,43 @@ public class SASIIndexTest
         String containsTable = "sasi_like_contains_test";
         String prefixTable = "sasi_like_prefix_test";
         String analyzedPrefixTable = "sasi_like_analyzed_prefix_test";
+        String tokenizedContainsTable = "sasi_like_analyzed_contains_test";
 
         QueryProcessor.executeOnceInternal(String.format("CREATE TABLE IF NOT EXISTS %s.%s (k int primary key, v text);", KS_NAME, containsTable));
         QueryProcessor.executeOnceInternal(String.format("CREATE TABLE IF NOT EXISTS %s.%s (k int primary key, v text);", KS_NAME, prefixTable));
         QueryProcessor.executeOnceInternal(String.format("CREATE TABLE IF NOT EXISTS %s.%s (k int primary key, v text);", KS_NAME, analyzedPrefixTable));
+        QueryProcessor.executeOnceInternal(String.format("CREATE TABLE IF NOT EXISTS %s.%s (k int primary key, v text);", KS_NAME, tokenizedContainsTable));
 
         QueryProcessor.executeOnceInternal(String.format("CREATE CUSTOM INDEX IF NOT EXISTS ON %s.%s(v) " +
-                "USING 'org.apache.cassandra.index.sasi.SASIIndex' WITH OPTIONS = { 'mode' : 'CONTAINS' };", KS_NAME, containsTable));
+                "USING 'org.apache.cassandra.index.sasi.SASIIndex' WITH OPTIONS = { 'mode' : 'CONTAINS', " +
+                                                         "'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.NonTokenizingAnalyzer', " +
+                                                         "'case_sensitive': 'false' };",
+                                                         KS_NAME, containsTable));
         QueryProcessor.executeOnceInternal(String.format("CREATE CUSTOM INDEX IF NOT EXISTS ON %s.%s(v) " +
                 "USING 'org.apache.cassandra.index.sasi.SASIIndex' WITH OPTIONS = { 'mode' : 'PREFIX' };", KS_NAME, prefixTable));
         QueryProcessor.executeOnceInternal(String.format("CREATE CUSTOM INDEX IF NOT EXISTS ON %s.%s(v) " +
                 "USING 'org.apache.cassandra.index.sasi.SASIIndex' WITH OPTIONS = { 'mode' : 'PREFIX', 'analyzed': 'true' };", KS_NAME, analyzedPrefixTable));
+        QueryProcessor.executeOnceInternal(String.format("CREATE CUSTOM INDEX IF NOT EXISTS ON %s.%s(v) " +
+                                                         "USING 'org.apache.cassandra.index.sasi.SASIIndex' WITH OPTIONS = " +
+                                                         "{ 'mode' : 'CONTAINS', 'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.StandardAnalyzer'," +
+                                                         "'analyzed': 'true', 'tokenization_enable_stemming': 'true', 'tokenization_normalize_lowercase': 'true', " +
+                                                         "'tokenization_locale': 'en' };",
+                                                         KS_NAME, tokenizedContainsTable));
 
-        testLIKEAndEQSemanticsWithDifferenceKindsOfIndexes(containsTable, prefixTable, analyzedPrefixTable, false);
-        testLIKEAndEQSemanticsWithDifferenceKindsOfIndexes(containsTable, prefixTable, analyzedPrefixTable, true);
+        testLIKEAndEQSemanticsWithDifferenceKindsOfIndexes(containsTable, prefixTable, analyzedPrefixTable, tokenizedContainsTable, false);
+        testLIKEAndEQSemanticsWithDifferenceKindsOfIndexes(containsTable, prefixTable, analyzedPrefixTable, tokenizedContainsTable, true);
     }
 
     private void testLIKEAndEQSemanticsWithDifferenceKindsOfIndexes(String containsTable,
                                                                     String prefixTable,
                                                                     String analyzedPrefixTable,
+                                                                    String tokenizedContainsTable,
                                                                     boolean forceFlush)
     {
         QueryProcessor.executeOnceInternal(String.format("INSERT INTO %s.%s (k, v) VALUES (?, ?);", KS_NAME, containsTable), 0, "Pavel");
         QueryProcessor.executeOnceInternal(String.format("INSERT INTO %s.%s (k, v) VALUES (?, ?);", KS_NAME, prefixTable), 0, "Jean-Claude");
         QueryProcessor.executeOnceInternal(String.format("INSERT INTO %s.%s (k, v) VALUES (?, ?);", KS_NAME, analyzedPrefixTable), 0, "Jean-Claude");
+        QueryProcessor.executeOnceInternal(String.format("INSERT INTO %s.%s (k, v) VALUES (?, ?);", KS_NAME, tokenizedContainsTable), 0, "Pavel");
 
         if (forceFlush)
         {
@@ -1830,13 +1854,27 @@ public class SASIIndexTest
 
         try
         {
-            QueryProcessor.executeOnceInternal(String.format("SELECT * FROM %s.%s WHERE v LIKE 'Pav%%';", KS_NAME, containsTable));
+            QueryProcessor.executeOnceInternal(String.format("SELECT * FROM %s.%s WHERE v = 'Pav';", KS_NAME, tokenizedContainsTable));
             Assert.fail();
         }
         catch (InvalidRequestException e)
         {
-            // expected since CONTAINS indexes only support LIKE '%<term>' and LIKE '%<term>%'
+            // expected since CONTAINS indexes only support LIKE
         }
+
+        try
+        {
+            QueryProcessor.executeOnceInternal(String.format("SELECT * FROM %s.%s WHERE v LIKE 'Pav%%';", KS_NAME, tokenizedContainsTable));
+            Assert.fail();
+        }
+        catch (InvalidRequestException e)
+        {
+            // expected since CONTAINS + analyzed only support LIKE
+        }
+
+        QueryProcessor.executeOnceInternal(String.format("SELECT * FROM %s.%s WHERE v LIKE 'Pav%%';", KS_NAME, containsTable));
+        Assert.assertNotNull(results);
+        Assert.assertEquals(1, results.size());
 
         results = QueryProcessor.executeOnceInternal(String.format("SELECT * FROM %s.%s WHERE v LIKE '%%Pav';", KS_NAME, containsTable));
         Assert.assertNotNull(results);

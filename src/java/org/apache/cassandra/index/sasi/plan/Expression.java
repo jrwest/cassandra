@@ -321,6 +321,9 @@ public class Expression
         if (!hasLower())
             return true;
 
+        if (term.isPartial() && operation == Op.PREFIX)
+            return false;
+
         int cmp = term.compareTo(validator, lower.value, false);
         return cmp > 0 || cmp == 0 && lower.inclusive;
     }
@@ -329,6 +332,9 @@ public class Expression
     {
         if (!hasUpper())
             return true;
+
+        if (term.isPartial() && operation == Op.PREFIX)
+            return false;
 
         int cmp = term.compareTo(validator, upper.value, false);
         return cmp < 0 || cmp == 0 && upper.inclusive;
