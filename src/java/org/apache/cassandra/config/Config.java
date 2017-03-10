@@ -150,6 +150,7 @@ public class Config
     public Integer native_transport_port_ssl = null;
     public int native_transport_max_threads = 128;
     public int native_transport_max_frame_size_in_mb = 256;
+    public int native_transport_frame_block_size_in_kb = 32;
     public volatile long native_transport_max_concurrent_connections = -1L;
     public volatile long native_transport_max_concurrent_connections_per_ip = -1L;
 
@@ -386,6 +387,7 @@ public class Config
     public volatile AuditLogOptions audit_logging_options = new AuditLogOptions();
 
     public CorruptedTombstoneStrategy corrupted_tombstone_strategy = CorruptedTombstoneStrategy.disabled;
+
     /**
      * @deprecated migrate to {@link DatabaseDescriptor#isClientInitialized()}
      */
