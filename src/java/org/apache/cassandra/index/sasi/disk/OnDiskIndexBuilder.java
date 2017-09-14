@@ -662,7 +662,7 @@ public class OnDiskIndexBuilder
         {
             term.serialize(buffer);
             buffer.writeByte((byte) keys.getTokenCount());
-            for (Pair<Long, LongSet> key : keys)
+            for (Pair<Long, Set<TokenTreeEntry>> key : keys)
                 buffer.writeLong(key.left);
         }
 

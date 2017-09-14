@@ -25,7 +25,7 @@ import org.apache.cassandra.utils.Pair;
 
 import com.carrotsearch.hppc.LongSet;
 
-public interface TokenTreeBuilder extends Iterable<Pair<Long, LongSet>>
+public interface TokenTreeBuilder extends Iterable<Pair<Long, Set<TokenTreeEntry>>>
 {
     int BLOCK_BYTES = 4096;
     int BLOCK_HEADER_BYTES = 64;
@@ -63,9 +63,10 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, LongSet>>
         }
     }
 
-    void add(Long token, long keyPosition);
-    void add(SortedMap<Long, LongSet> data);
-    void add(Iterator<Pair<Long, LongSet>> data);
+    void add(Long token, long partitionPosition);
+    void add(Long token, TokenTreeEntry entry);
+    void add(SortedMap<Long, Set<TokenTreeEntry>> data);
+    void add(Iterator<Pair<Long, Set<TokenTreeEntry>>> data);
     void add(TokenTreeBuilder ttb);
 
     boolean isEmpty();

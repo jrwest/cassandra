@@ -408,13 +408,13 @@ public class TokenTree
             });
         }
 
-        public LongSet getOffsets()
+        public Set<TokenTreeEntry> getOffsets()
         {
-            LongSet offsets = new LongOpenHashSet(4);
+            Set<TokenTreeEntry> offsets = new HashSet<>(); // TODO (jwest): use a more optimized set
             for (TokenInfo i : info)
             {
                 for (long offset : i.fetchOffsets())
-                    offsets.add(offset);
+                    offsets.add(new TokenTreeEntry(offset));
             }
 
             return offsets;

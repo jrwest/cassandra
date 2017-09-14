@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
@@ -285,7 +286,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
         protected abstract void serializeData(ByteBuffer buf);
 
-        protected LeafEntry createEntry(final long tok, final LongSet offsets)
+        protected LeafEntry createEntry(final long tok, final Set<TokenTreeEntry> offsets)
         {
             int offsetCount = offsets.size();
             switch (offsetCount)
@@ -293,7 +294,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                 case 0:
                     throw new AssertionError("no offsets for token " + tok);
                 case 1:
-                    long offset = offsets.toArray()[0];
+                    long offset = ((TokenTreeEntry) offsets.toArray()[0]).getPartitionOffset();
                     if (offset > MAX_OFFSET)
                         throw new AssertionError("offset " + offset + " cannot be greater than " + MAX_OFFSET);
                     else if (offset <= Integer.MAX_VALUE)
@@ -301,10 +302,12 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                     else
                         return new FactoredOffsetLeafEntry(tok, offset);
                 case 2:
-                    long[] rawOffsets = offsets.toArray();
-                    if (rawOffsets[0] <= Integer.MAX_VALUE && rawOffsets[1] <= Integer.MAX_VALUE &&
-                        (rawOffsets[0] <= Short.MAX_VALUE || rawOffsets[1] <= Short.MAX_VALUE))
-                        return new PackedCollisionLeafEntry(tok, rawOffsets);
+                    Object[] entries = offsets.toArray();
+                    TokenTreeEntry entry1 = (TokenTreeEntry) entries[0];
+                    TokenTreeEntry entry2 = (TokenTreeEntry) entries[1];
+                    if (entry1.getPartitionOffset() <= Integer.MAX_VALUE && entry2.getPartitionOffset() <= Integer.MAX_VALUE &&
+                        (entry1.getPartitionOffset() <= Short.MAX_VALUE || entry2.getPartitionOffset() <= Short.MAX_VALUE))
+                        return new PackedCollisionLeafEntry(tok, entry1, entry2);
                     else
                         return createOverflowEntry(tok, offsetCount, offsets);
                 default:
@@ -312,18 +315,18 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             }
         }
 
-        private LeafEntry createOverflowEntry(final long tok, final int offsetCount, final LongSet offsets)
+        private LeafEntry createOverflowEntry(final long tok, final int offsetCount, final Set<TokenTreeEntry> entries)
         {
             if (overflowCollisions == null)
                 overflowCollisions = new LongArrayList();
 
             LeafEntry entry = new OverflowCollisionLeafEntry(tok, (short) overflowCollisions.size(), (short) offsetCount);
-            for (LongCursor o : offsets)
+            for (TokenTreeEntry o : entries)
             {
                 if (overflowCollisions.size() == OVERFLOW_TRAILER_CAPACITY)
                     throw new AssertionError("cannot have more than " + OVERFLOW_TRAILER_CAPACITY + " overflow collisions per leaf");
                 else
-                    overflowCollisions.add(o.value);
+                    overflowCollisions.add(o.getPartitionOffset());
             }
             return entry;
         }
@@ -417,12 +420,12 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             private short smallerOffset;
             private int largerOffset;
 
-            public PackedCollisionLeafEntry(final long tok, final long[] offs)
+            public PackedCollisionLeafEntry(final long tok, final TokenTreeEntry entry1, TokenTreeEntry entry2)
             {
                 super(tok);
 
-                smallerOffset = (short) Math.min(offs[0], offs[1]);
-                largerOffset = (int) Math.max(offs[0], offs[1]);
+                smallerOffset = (short) Math.min(entry1.getPartitionOffset(), entry2.getPartitionOffset());
+                largerOffset = (int) Math.max(entry1.getPartitionOffset(), entry2.getPartitionOffset());
             }
 
             public EntryType type()

@@ -18,13 +18,16 @@
 package org.apache.cassandra.index.sasi.memory;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.disk.Token;
+import org.apache.cassandra.index.sasi.disk.TokenTreeEntry;
 import org.apache.cassandra.index.sasi.utils.AbstractIterator;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
@@ -93,11 +96,11 @@ public class KeyRangeIterator extends RangeIterator<Long, Token>
             }};
         }
 
-        public LongSet getOffsets()
+        public Set<TokenTreeEntry> getOffsets()
         {
-            LongSet offsets = new LongOpenHashSet(4);
+            Set<TokenTreeEntry> offsets = new HashSet<>(); // TODO (jwest): use more optimized set
             for (DecoratedKey key : keys)
-                offsets.add((long) key.getToken().getTokenValue());
+                offsets.add(new TokenTreeEntry((long) key.getToken().getTokenValue()));
 
             return offsets;
         }

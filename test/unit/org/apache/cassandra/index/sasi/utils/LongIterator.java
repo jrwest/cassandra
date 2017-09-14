@@ -20,13 +20,16 @@ package org.apache.cassandra.index.sasi.utils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import com.carrotsearch.hppc.LongOpenHashSet;
 import com.carrotsearch.hppc.LongSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.disk.Token;
+import org.apache.cassandra.index.sasi.disk.TokenTreeEntry;
 
 public class LongIterator extends RangeIterator<Long, Token>
 {
@@ -82,9 +85,9 @@ public class LongIterator extends RangeIterator<Long, Token>
         }
 
         @Override
-        public LongSet getOffsets()
+        public Set<TokenTreeEntry> getOffsets()
         {
-            return new LongOpenHashSet(4);
+            return new HashSet<>(); // TODO (jwest): use more optimized set
         }
 
         @Override

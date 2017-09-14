@@ -20,6 +20,7 @@ package org.apache.cassandra.index.sasi.disk;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
+import java.util.Set;
 import java.util.SortedMap;
 
 import org.apache.cassandra.index.sasi.utils.CombinedTerm;
@@ -63,17 +64,22 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         combinedTerm = term;
     }
 
-    public void add(Long token, long keyPosition)
+    public void add(Long token, long partitionPosition)
     {
         throw new UnsupportedOperationException();
     }
 
-    public void add(SortedMap<Long, LongSet> data)
+    public void add(SortedMap<Long, Set<TokenTreeEntry>> data)
     {
         throw new UnsupportedOperationException();
     }
 
-    public void add(Iterator<Pair<Long, LongSet>> data)
+    public void add(Iterator<Pair<Long, Set<TokenTreeEntry>>> data)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    public void add(Long token, TokenTreeEntry entry)
     {
         throw new UnsupportedOperationException();
     }
@@ -83,12 +89,12 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         return tokenCount == 0;
     }
 
-    public Iterator<Pair<Long, LongSet>> iterator()
+    public Iterator<Pair<Long, Set<TokenTreeEntry>>> iterator()
     {
         Iterator<Token> iterator = combinedTerm.getTokenIterator();
-        return new AbstractIterator<Pair<Long, LongSet>>()
+        return new AbstractIterator<Pair<Long, Set<TokenTreeEntry>>>()
         {
-            protected Pair<Long, LongSet> computeNext()
+            protected Pair<Long, Set<TokenTreeEntry>> computeNext()
             {
                 if (!iterator.hasNext())
                     return endOfData();

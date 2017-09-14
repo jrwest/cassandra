@@ -29,8 +29,7 @@ import com.carrotsearch.hppc.cursors.LongCursor;
 
 public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
 {
-    private final SortedMap<Long, LongSet> tokens = new TreeMap<>();
-
+    private final SortedMap<Long, Set<TokenTreeEntry>> tokens = new TreeMap();
 
     public DynamicTokenTreeBuilder()
     {}
@@ -40,54 +39,58 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
         add(data);
     }
 
-    public DynamicTokenTreeBuilder(SortedMap<Long, LongSet> data)
+    public DynamicTokenTreeBuilder(SortedMap<Long, Set<TokenTreeEntry>> data)
     {
         add(data);
     }
 
-    public void add(Long token, long keyPosition)
+    public void add(Long token, long partitionPosition)
     {
-        LongSet found = tokens.get(token);
-        if (found == null)
-            tokens.put(token, (found = new LongOpenHashSet(2)));
-
-        found.add(keyPosition);
+        add(token, new TokenTreeEntry(partitionPosition));
     }
 
-    public void add(Iterator<Pair<Long, LongSet>> data)
+    public void add(Long token, TokenTreeEntry entry) {
+        Set<TokenTreeEntry> found = tokens.get(token);
+        if (found == null)
+            tokens.put(token, (found = new HashSet<>())); // TODO (jwest): implement TokenTreeEntrySet instead
+
+        found.add(entry);
+    }
+
+    public void add(Iterator<Pair<Long, Set<TokenTreeEntry>>> data)
     {
         while (data.hasNext())
         {
-            Pair<Long, LongSet> entry = data.next();
-            for (LongCursor l : entry.right)
-                add(entry.left, l.value);
+            Pair<Long, Set<TokenTreeEntry>> entry = data.next();
+            for (TokenTreeEntry e : entry.right)
+                add(entry.left, e);
         }
     }
 
-    public void add(SortedMap<Long, LongSet> data)
+    public void add(SortedMap<Long, Set<TokenTreeEntry>> data)
     {
-        for (Map.Entry<Long, LongSet> newEntry : data.entrySet())
+        for (Map.Entry<Long, Set<TokenTreeEntry>> newEntry : data.entrySet())
         {
-            LongSet found = tokens.get(newEntry.getKey());
+            Set<TokenTreeEntry> found = tokens.get(newEntry.getKey());
             if (found == null)
-                tokens.put(newEntry.getKey(), (found = new LongOpenHashSet(4)));
+                tokens.put(newEntry.getKey(), (found = new HashSet<>())); // TODO (jwest): implement TokenTreeEntrySet instead
 
-            for (LongCursor offset : newEntry.getValue())
-                found.add(offset.value);
+            for (TokenTreeEntry entry : newEntry.getValue())
+                found.add(entry);
         }
     }
 
-    public Iterator<Pair<Long, LongSet>> iterator()
+    public Iterator<Pair<Long, Set<TokenTreeEntry>>> iterator()
     {
-        final Iterator<Map.Entry<Long, LongSet>> iterator = tokens.entrySet().iterator();
-        return new AbstractIterator<Pair<Long, LongSet>>()
+        final Iterator<Map.Entry<Long, Set<TokenTreeEntry>>> iterator = tokens.entrySet().iterator();
+        return new AbstractIterator<Pair<Long, Set<TokenTreeEntry>>>()
         {
-            protected Pair<Long, LongSet> computeNext()
+            protected Pair<Long, Set<TokenTreeEntry>> computeNext()
             {
                 if (!iterator.hasNext())
                     return endOfData();
 
-                Map.Entry<Long, LongSet> entry = iterator.next();
+                Map.Entry<Long, Set<TokenTreeEntry>> entry = iterator.next();
                 return Pair.create(entry.getKey(), entry.getValue());
             }
         };
@@ -161,9 +164,9 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
 
     private class DynamicLeaf extends Leaf
     {
-        private final SortedMap<Long, LongSet> tokens;
+        private final SortedMap<Long, Set<TokenTreeEntry>> tokens;
 
-        DynamicLeaf(SortedMap<Long, LongSet> data)
+        DynamicLeaf(SortedMap<Long, Set<TokenTreeEntry>> data)
         {
             super(data.firstKey(), data.lastKey());
             tokens = data;
@@ -181,7 +184,7 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
 
         protected void serializeData(ByteBuffer buf)
         {
-            for (Map.Entry<Long, LongSet> entry : tokens.entrySet())
+            for (Map.Entry<Long, Set<TokenTreeEntry>> entry : tokens.entrySet())
                 createEntry(entry.getKey(), entry.getValue()).serialize(buf);
         }
 
