@@ -25,7 +25,7 @@ import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
 
-public abstract class Token implements CombinedValue<Long>, Iterable<DecoratedKey>
+public abstract class Token implements CombinedValue<Long>, Iterable<IndexedRow>
 {
     protected final long token;
 

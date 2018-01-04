@@ -113,7 +113,7 @@ public class PerSSTableIndexWriterTest extends SchemaLoader
                 Map.Entry<DecoratedKey, Row> key = keyIterator.next();
 
                 indexWriter.startPartition(key.getKey(), position++);
-                indexWriter.nextUnfilteredCluster(key.getValue());
+                indexWriter.nextUnfilteredCluster(key.getValue(), -1); // row position not used in this test
             }
 
             PerSSTableIndexWriter.Index index = indexWriter.getIndex(column);
@@ -244,7 +244,11 @@ public class PerSSTableIndexWriterTest extends SchemaLoader
             for (Integer keyPos : value.getValue())
             {
                 ByteBuffer key = ByteBufferUtil.bytes(String.format("key%06d", keyPos));
-                index.add(term, metadata.partitioner.decorateKey(key), ThreadLocalRandom.current().nextInt(Integer.MAX_VALUE - 1));
+                index.add(term,
+                          metadata.partitioner.decorateKey(key),
+                          ThreadLocalRandom.current().nextInt(Integer.MAX_VALUE - 1),
+                          Clustering.EMPTY,
+                          ThreadLocalRandom.current().nextInt(Integer.MAX_VALUE - 1));
             }
         }
     }

@@ -106,7 +106,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
     protected final long indexSize;
     protected final boolean hasMarkedPartials;
 
-    protected final Function<Long, DecoratedKey> keyFetcher;
+    protected final KeyFetcher keyFetcher;
 
     protected final String indexPath;
 
@@ -116,7 +116,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
     protected final ByteBuffer minTerm, maxTerm, minKey, maxKey;
 
     @SuppressWarnings("resource")
-    public OnDiskIndex(File index, AbstractType<?> cmp, Function<Long, DecoratedKey> keyReader)
+    public OnDiskIndex(File index, AbstractType<?> cmp, KeyFetcher keyReader)
     {
         keyFetcher = keyReader;
 

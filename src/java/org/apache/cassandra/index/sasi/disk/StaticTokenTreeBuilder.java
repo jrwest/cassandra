@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.SortedMap;
+import java.util.Spliterators;
 
 import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.Clustering;
@@ -111,8 +112,14 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         return tokenCount;
     }
 
+    // TODO (jwest): the obvious implement is O(number of entries) but can we add up the sizes while tree is being constructed
+    protected int serializedDataSize()
+    {
+        return 0;
+    }
+
     @Override
-    public void write(DataOutputPlus out) throws IOException
+    protected void writeIndex(DataOutputPlus out) throws IOException
     {
         // if the root is not a leaf then none of the leaves have been written (all are PartialLeaf)
         // so write out the last layer of the tree by converting PartialLeaf to StaticLeaf and
@@ -124,14 +131,20 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         RangeIterator<Long, Token> tokens = combinedTerm.getTokenIterator();
         ByteBuffer blockBuffer = ByteBuffer.allocate(BLOCK_BYTES);
         Iterator<Node> leafIterator = leftmostLeaf.levelIterator();
+        long dataOffset = 0;
         while (leafIterator.hasNext())
         {
             Leaf leaf = (Leaf) leafIterator.next();
             Leaf writeableLeaf = new StaticLeaf(Iterators.limit(tokens, leaf.tokenCount()), leaf);
-            writeableLeaf.serialize(-1, blockBuffer);
+            dataOffset += writeableLeaf.serialize(-1, blockBuffer, dataOffset);
             flushBuffer(blockBuffer, out, true);
         }
 
+    }
+
+    protected void writeData(DataOutputPlus out) throws IOException
+    {
+        throw new RuntimeException("not implemented");
     }
 
     protected void constructTree()
@@ -201,7 +214,7 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
             return size;
         }
 
-        public void serializeData(ByteBuffer buf)
+        public long serializeData(ByteBuffer buf, long curDataOffset)
         {
             throw new UnsupportedOperationException();
         }
@@ -243,13 +256,18 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
             return count;
         }
 
-        public void serializeData(ByteBuffer buf)
+        // TODO (jwest): reduce duplication here?
+        public long serializeData(ByteBuffer buf, long curDataOffset)
         {
+            long offset = curDataOffset;
             while (tokens.hasNext())
             {
                 Token entry = tokens.next();
-                createEntry(entry.get(), entry.getEntries()).serialize(buf);
+                LeafEntry le = createEntry(entry.get(), entry.getEntries(), offset);
+                le.serialize(buf);
             }
+
+            return (offset - curDataOffset);
         }
 
         public boolean isSerializable()

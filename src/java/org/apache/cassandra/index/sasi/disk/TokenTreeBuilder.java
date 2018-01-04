@@ -42,6 +42,8 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTre
     byte LAST_LEAF_SHIFT = 1;
     byte SHARED_HEADER_BYTES = 19;
     byte ENTRY_TYPE_MASK = 0x03;
+    short ENTRY_DATA_MASK = 0x0FF0;
+    byte ENTRY_DATA_SHIFT = 4;
     short AB_MAGIC = 0x5A51;
 
     // note: ordinal positions are used here, do not change order

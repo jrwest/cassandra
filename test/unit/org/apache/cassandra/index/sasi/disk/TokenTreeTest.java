@@ -30,6 +30,8 @@ import com.carrotsearch.hppc.ObjectSet;
 import com.carrotsearch.hppc.cursors.ObjectCursor;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.BufferDecoratedKey;
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.index.sasi.disk.TokenTreeBuilder.EntryType;
@@ -54,7 +56,7 @@ import com.google.common.base.Function;
 
 public class TokenTreeTest
 {
-    private static final Function<Long, DecoratedKey> KEY_CONVERTER = new KeyConverter();
+    private static final KeyFetcher KEY_CONVERTER = new KeyConverter();
 
     @BeforeClass
     public static void setupDD()
@@ -115,7 +117,7 @@ public class TokenTreeTest
         public void accept(C c) throws Exception;
     }
 
-    final static List<SortedMap<Long, ObjectSet<TokenTreeEntry>>> tokenMaps = Arrays.asList(simpleTokenMap,
+    final static List<SortedMap<Long, ObjectSet<TokenTreeEntry>>> tokenMaps = Arrays.asList(//simpleTokenMap,
                                                                                             bigTokensMap,
                                                                                             tokensMapWithStatics);
 
@@ -194,6 +196,7 @@ public class TokenTreeTest
             Map.Entry<Long, ObjectSet<TokenTreeEntry>> listNext = listIterator.next();
 
             Assert.assertEquals(listNext.getKey(), treeNext.get());
+            Assert.assertEquals(listNext.getValue(), treeNext.getEntries());
             Assert.assertEquals(convert(listNext.getValue()), convert(treeNext));
         }
 
@@ -215,6 +218,7 @@ public class TokenTreeTest
         buildSerializeAndGet(true);
     }
 
+    // TODO (jwest): extend this test to test statics being written
     public void buildSerializeAndGet(boolean isStatic) throws Exception
     {
         final long tokMin = 0;
@@ -275,6 +279,7 @@ public class TokenTreeTest
             TokenWithOffsets listNext = listIterator.next();
 
             Assert.assertEquals(listNext.token, (lastToken = treeNext.get()));
+            Assert.assertEquals(listNext.getEntries(), treeNext.getEntries());
             Assert.assertEquals(convert(listNext.offsets), convert(treeNext));
         }
 
@@ -643,12 +648,20 @@ public class TokenTreeTest
         return result;
     }
 
-    private static class KeyConverter implements Function<Long, DecoratedKey>
-    {
-        @Override
-        public DecoratedKey apply(Long offset)
+    private static class KeyConverter implements KeyFetcher {
+        public DecoratedKey partitionKeyAt(long offset)
         {
             return dk(offset);
+        }
+
+        public Clustering clusteringAt(long offset)
+        {
+            throw new RuntimeException("not implemented");
+        }
+
+        public ClusteringComparator clusteringComparator()
+        {
+            throw new RuntimeException("not implemented");
         }
     }
 

@@ -17,9 +17,16 @@
  */
 package org.apache.cassandra.index.sasi.disk;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import com.carrotsearch.hppc.ObjectOpenHashSet;
+import com.carrotsearch.hppc.ObjectSet;
+import com.carrotsearch.hppc.cursors.ObjectCursor;
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringPrefix;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.Pair;
 
@@ -29,7 +36,7 @@ import com.carrotsearch.hppc.cursors.LongCursor;
 
 public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
 {
-    private final SortedMap<Long, Set<TokenTreeEntry>> tokens = new TreeMap();
+    private final SortedMap<Long, ObjectSet<TokenTreeEntry>> tokens = new TreeMap();
 
     public DynamicTokenTreeBuilder()
     {}
@@ -39,58 +46,67 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
         add(data);
     }
 
-    public DynamicTokenTreeBuilder(SortedMap<Long, Set<TokenTreeEntry>> data)
+    public DynamicTokenTreeBuilder(SortedMap<Long, ObjectSet<TokenTreeEntry>> data)
     {
         add(data);
     }
 
-    public void add(Long token, long partitionPosition)
+    public void add(Long token, long partitionPosition, Clustering clustering, long rowPosition)
     {
-        add(token, new TokenTreeEntry(partitionPosition));
+        TokenTreeEntry entry;
+        if (clustering.equals(Clustering.EMPTY))
+            entry = new TokenTreeEntry.PartitionOnly(partitionPosition);
+        else if (clustering.kind() == ClusteringPrefix.Kind.STATIC_CLUSTERING)
+            entry = new TokenTreeEntry.PartitionWithStaticRow(partitionPosition);
+        else
+            entry = new TokenTreeEntry.PartitionAndClusterings(partitionPosition, clustering, rowPosition);
+
+        add(token, entry);
     }
 
     public void add(Long token, TokenTreeEntry entry) {
-        Set<TokenTreeEntry> found = tokens.get(token);
+        ObjectSet<TokenTreeEntry> found = tokens.get(token);
         if (found == null)
-            tokens.put(token, (found = new HashSet<>())); // TODO (jwest): implement TokenTreeEntrySet instead
+            tokens.put(token, (found = new ObjectOpenHashSet(2)));
 
+        // TODO (jwest): this is broken because it doesn't merge entries
         found.add(entry);
     }
 
-    public void add(Iterator<Pair<Long, Set<TokenTreeEntry>>> data)
+    public void add(Iterator<Pair<Long, ObjectSet<TokenTreeEntry>>> data)
     {
         while (data.hasNext())
         {
-            Pair<Long, Set<TokenTreeEntry>> entry = data.next();
-            for (TokenTreeEntry e : entry.right)
-                add(entry.left, e);
+            Pair<Long, ObjectSet<TokenTreeEntry>> entry = data.next();
+            for (ObjectCursor<TokenTreeEntry> c : entry.right)
+                add(entry.left, c.value);
         }
     }
 
-    public void add(SortedMap<Long, Set<TokenTreeEntry>> data)
+    public void add(SortedMap<Long, ObjectSet<TokenTreeEntry>> data)
     {
-        for (Map.Entry<Long, Set<TokenTreeEntry>> newEntry : data.entrySet())
+        for (Map.Entry<Long, ObjectSet<TokenTreeEntry>> newEntry : data.entrySet())
         {
-            Set<TokenTreeEntry> found = tokens.get(newEntry.getKey());
+            ObjectSet<TokenTreeEntry> found = tokens.get(newEntry.getKey());
             if (found == null)
-                tokens.put(newEntry.getKey(), (found = new HashSet<>())); // TODO (jwest): implement TokenTreeEntrySet instead
+                tokens.put(newEntry.getKey(), (found = new ObjectOpenHashSet<>(newEntry.getValue().size())));
 
-            for (TokenTreeEntry entry : newEntry.getValue())
-                found.add(entry);
+            for (ObjectCursor<TokenTreeEntry> cursor : newEntry.getValue())
+                found.add(cursor.value);
         }
     }
 
-    public Iterator<Pair<Long, Set<TokenTreeEntry>>> iterator()
+    public Iterator<Pair<Long, ObjectSet<TokenTreeEntry>>> iterator()
     {
-        final Iterator<Map.Entry<Long, Set<TokenTreeEntry>>> iterator = tokens.entrySet().iterator();
-        return new AbstractIterator<Pair<Long, Set<TokenTreeEntry>>>()
+        final Iterator<Map.Entry<Long, ObjectSet<TokenTreeEntry>>> iterator = tokens.entrySet().iterator();
+        return new AbstractIterator<Pair<Long, ObjectSet<TokenTreeEntry>>>()
         {
-            protected Pair<Long, Set<TokenTreeEntry>> computeNext()
+            protected Pair<Long, ObjectSet<TokenTreeEntry>> computeNext()
             {
                 if (!iterator.hasNext())
                     return endOfData();
 
-                Map.Entry<Long, Set<TokenTreeEntry>> entry = iterator.next();
+                Map.Entry<Long, ObjectSet<TokenTreeEntry>> entry = iterator.next();
                 return Pair.create(entry.getKey(), entry.getValue());
             }
         };
@@ -100,6 +116,32 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
     {
         return tokens.size() == 0;
     }
+
+    // TODO (jwest): this implementation is O(number of entries) but can we add up the sizes while entries are being added (if careful to handle merging)
+    protected int serializedDataSize()
+    {
+        int size = 0;
+        for (Map.Entry<Long, ObjectSet<TokenTreeEntry>> tokenAndEntries : tokens.entrySet()) {
+            for (ObjectCursor<TokenTreeEntry> entry : tokenAndEntries.getValue()) {
+                size += entry.value.serializedSize();
+            }
+        }
+
+        return size;
+    }
+
+    protected void writeData(DataOutputPlus out) throws IOException
+    {
+        for (Map.Entry<Long, ObjectSet<TokenTreeEntry>> tokenAndEntries : tokens.entrySet()) {
+            for (ObjectCursor<TokenTreeEntry> entry : tokenAndEntries.getValue()) {
+                if (!entry.value.packableOffset().isPresent()) {
+                    entry.value.write(out);
+                }
+
+            }
+        }
+    }
+
 
     protected void constructTree()
     {
@@ -164,9 +206,9 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
 
     private class DynamicLeaf extends Leaf
     {
-        private final SortedMap<Long, Set<TokenTreeEntry>> tokens;
+        private final SortedMap<Long, ObjectSet<TokenTreeEntry>> tokens;
 
-        DynamicLeaf(SortedMap<Long, Set<TokenTreeEntry>> data)
+        DynamicLeaf(SortedMap<Long, ObjectSet<TokenTreeEntry>> data)
         {
             super(data.firstKey(), data.lastKey());
             tokens = data;
@@ -182,10 +224,18 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
             return true;
         }
 
-        protected void serializeData(ByteBuffer buf)
+        protected long serializeData(ByteBuffer buf, long curDataOffset)
         {
-            for (Map.Entry<Long, Set<TokenTreeEntry>> entry : tokens.entrySet())
-                createEntry(entry.getKey(), entry.getValue()).serialize(buf);
+            long offset = curDataOffset;
+            for (Map.Entry<Long, ObjectSet<TokenTreeEntry>> entry : tokens.entrySet())
+            {
+                LeafEntry le = createEntry(entry.getKey(), entry.getValue(), offset);
+                offset += le.dataNeeded();
+                le.serialize(buf);
+            }
+
+            // TODO (jwest): would it be better to just change to return the new offset?
+            return (offset - curDataOffset);
         }
 
     }

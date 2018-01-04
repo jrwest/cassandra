@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import com.carrotsearch.hppc.ObjectSet;
@@ -65,21 +66,37 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         return tokenCount;
     }
 
+    // TODO (jwest): need to update to account for data portion
+    // TODO (jwest): is returning an int here for both the index layer and data layer too small?
     public int serializedSize()
     {
         if (numBlocks == 1)
             return BLOCK_HEADER_BYTES +
                    ((int) tokenCount * BLOCK_ENTRY_BYTES) +
-                   (((Leaf) root).overflowCollisionCount() * OVERFLOW_ENTRY_BYTES);
+                   (((Leaf) root).overflowCollisionCount() * OVERFLOW_ENTRY_BYTES) +
+                   serializedDataSize();
         else
-            return numBlocks * BLOCK_BYTES;
+            // TODO (jwest): should we block align the data portion
+            return numBlocks * BLOCK_BYTES + serializedDataSize();
     }
 
-    public void write(DataOutputPlus out) throws IOException
+    protected abstract int serializedDataSize();
+
+
+    // TODO (jwest): need to separate this out into two methods "writeIndex" and "writeData" so that sub-classes can
+    // override the individual parts.
+
+    public void write(DataOutputPlus out) throws IOException {
+        writeIndex(out);
+        writeData(out);
+    }
+
+    protected void writeIndex(DataOutputPlus out) throws IOException
     {
         ByteBuffer blockBuffer = ByteBuffer.allocate(BLOCK_BYTES);
         Iterator<Node> levelIterator = root.levelIterator();
         long childBlockIndex = 1;
+        long dataOffset = 0;
 
         while (levelIterator != null)
         {
@@ -93,7 +110,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
                 if (block.isSerializable())
                 {
-                    block.serialize(childBlockIndex, blockBuffer);
+                    dataOffset += block.serialize(childBlockIndex, blockBuffer, dataOffset);
                     flushBuffer(blockBuffer, out, numBlocks != 1);
                 }
 
@@ -104,6 +121,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         }
     }
 
+    protected abstract void writeData(DataOutputPlus out) throws IOException;
     protected abstract void constructTree();
 
     protected void flushBuffer(ByteBuffer buffer, DataOutputPlus o, boolean align) throws IOException
@@ -130,7 +148,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         }
 
         public abstract boolean isSerializable();
-        public abstract void serialize(long childBlockIndex, ByteBuffer buf);
+        public abstract long serialize(long childBlockIndex, ByteBuffer buf, long curDataOffset);
         public abstract int childCount();
         public abstract int tokenCount();
 
@@ -279,16 +297,22 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                     buf.putLong(offset.value);
         }
 
-        public void serialize(long childBlockIndex, ByteBuffer buf)
+
+        public long serialize(long childBlockIndex, ByteBuffer buf, long curDataOffset)
         {
             serializeHeader(buf);
-            serializeData(buf);
+            long dataBytesNeeded = serializeData(buf, curDataOffset);
             serializeOverflowCollisions(buf);
+
+            return dataBytesNeeded;
         }
 
-        protected abstract void serializeData(ByteBuffer buf);
 
-        protected LeafEntry createEntry(final long tok, final ObjectSet<TokenTreeEntry> offsets)
+        protected abstract long serializeData(ByteBuffer buf, long curDataOffset);
+
+        // TODO (jwest): this needs to take the calculated offset into the data portion for some operations
+        // TODO (jwest): it also needs to return somehow (maybe via leaf entry) how much space in the data layer it will consume
+        protected LeafEntry createEntry(final long tok, final ObjectSet<TokenTreeEntry> offsets, long curDataOffset)
         {
             int offsetCount = offsets.size();
             switch (offsetCount)
@@ -296,23 +320,44 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                 case 0:
                     throw new AssertionError("no offsets for token " + tok);
                 case 1:
-                    long offset = ((TokenTreeEntry) offsets.toArray()[0]).getPartitionOffset();
-                    if (offset > MAX_OFFSET)
-                        throw new AssertionError("offset " + offset + " cannot be greater than " + MAX_OFFSET);
-                    else if (offset <= Integer.MAX_VALUE)
-                        return new SimpleLeafEntry(tok, offset);
-                    else
-                        return new FactoredOffsetLeafEntry(tok, offset);
+                    TokenTreeEntry entry = offsets.iterator().next().value;
+                    //if (entry
+                    // TODO (jwest): change this to operate on TokenTreeEntry:
+                    //               - move checking of whether or not the offset should be facted to TTE
+                    //               - factoring can apply to tree data or sstable data offset
+                    //               - change TTE to return "the offset" (optional so that we can use data offset in case where entry should be written to data layer)
+                    //long offset = ((TokenTreeEntry) offsets.toArray()[0]).getPartitionOffset();
+
+                    // TODO (jwest): need to move this assert somewhere since we can't check it here with the given interface, for now assume its fine
+                    //if (offset > MAX_OFFSET)
+                   // throw new AssertionError("offset " + offset + " cannot be greater than " + MAX_OFFSET);
+                    //else if (offset <= Integer.MAX_VALUE)
+                     //   return new SimpleLeafEntry(tok, offset);
+                    //else
+                     //   return new FactoredOffsetLeafEntry(tok, offset);
+                    Optional<Long> packableOffset = entry.packableOffset();
+                    return packableOffset.map(offset -> createSimpleOrPackedEntry(tok, entry, offset))
+                                         .orElseGet(() -> createSimpleOrPackedEntry(tok, entry, curDataOffset));
                 case 2:
-                    TokenTreeEntry[] entries = offsets.toArray(TokenTreeEntry.class);
+                    /*TokenTreeEntry[] entries = offsets.toArray(TokenTreeEntry.class);
                     if (entries[0].getPartitionOffset() <= Integer.MAX_VALUE && entries[1].getPartitionOffset() <= Integer.MAX_VALUE &&
                         (entries[0].getPartitionOffset() <= Short.MAX_VALUE || entries[1].getPartitionOffset() <= Short.MAX_VALUE))
                         return new PackedCollisionLeafEntry(tok, entries[0], entries[1]);
                     else
-                        return createOverflowEntry(tok, offsetCount, offsets);
+                        return createOverflowEntry(tok, offsetCount, offsets);*/
                 default:
-                    return createOverflowEntry(tok, offsetCount, offsets);
+                    throw new UnsupportedOperationException("don't support 2 or more collisions yet");
+                    /*return createOverflowEntry(tok, offsetCount, offsets);*/
             }
+        }
+
+        private LeafEntry createSimpleOrPackedEntry(final long tok, final TokenTreeEntry entry, long offset) {
+            if (offset > MAX_OFFSET)
+                throw new AssertionError("offset " + offset + " cannot be greater than " + MAX_OFFSET);
+            else if (offset <= Integer.MAX_VALUE)
+                return new SimpleLeafEntry(tok, entry, offset);
+            else
+                return new FactoredOffsetLeafEntry(tok, entry, offset);
         }
 
         private LeafEntry createOverflowEntry(final long tok, final int offsetCount, final ObjectSet<TokenTreeEntry> entries)
@@ -338,6 +383,14 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             abstract public EntryType type();
             abstract public int offsetData();
             abstract public short offsetExtra();
+            abstract public long dataNeeded();
+
+            /**
+             * @return a bitmask where each set bit represents a {@link TokenTreeEntry}
+             * whose data is stored in the data layer of the tree ({@link #dataNeeded()} > 0).
+             * While a short is returned only the first 8 bits are used.
+             */
+            abstract public short dataMask();
 
             public LeafEntry(final long tok)
             {
@@ -346,7 +399,9 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
             public void serialize(ByteBuffer buf)
             {
-                buf.putShort((short) type().ordinal())
+                //header: bits [0,3] are for type, bits [4,11] for dataMask() and the remaining are unused
+                short header = (short) ((dataMask() << ENTRY_DATA_SHIFT) | type().ordinal());
+                buf.putShort(header)
                    .putShort(offsetExtra())
                    .putLong(token)
                    .putInt(offsetData());
@@ -354,16 +409,45 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
         }
 
-
-        // assumes there is a single offset and the offset is <= Integer.MAX_VALUE
-        protected class SimpleLeafEntry extends LeafEntry
-        {
+        protected abstract class SingleEntryLeaf extends LeafEntry {
+            private final TokenTreeEntry entry;
             private final long offset;
 
-            public SimpleLeafEntry(final long tok, final long off)
-            {
+            public SingleEntryLeaf(final long tok, final TokenTreeEntry e, final long off) {
                 super(tok);
+                entry = e;
                 offset = off;
+            }
+
+            public long dataNeeded()
+            {
+                return entry.serializedSize();
+            }
+
+            public short dataMask()
+            {
+                // if the entry has a single offset the mask is 0, otherwse, the entry is stored in the data layer
+                // and the mask is 1
+                return (short) (entry.packableOffset().isPresent() ? 0 : 1);
+            }
+
+            protected long offset() {
+                return offset;
+            }
+
+            protected TokenTreeEntry entry() {
+                return entry;
+            }
+        }
+
+
+        // assumes there is a single offset and the offset is <= Integer.MAX_VALUE
+        protected class SimpleLeafEntry extends SingleEntryLeaf
+        {
+
+            public SimpleLeafEntry(final long tok, final TokenTreeEntry e, final long off)
+            {
+                super(tok, e, off);
             }
 
             public EntryType type()
@@ -373,26 +457,28 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
             public int offsetData()
             {
-                return (int) offset;
+                return (int) offset();
             }
 
             public short offsetExtra()
             {
                 return 0;
             }
+
+            public long dataNeeded()
+            {
+                return entry().serializedSize();
+            }
         }
 
         // assumes there is a single offset and Integer.MAX_VALUE < offset <= MAX_OFFSET
         // take the middle 32 bits of offset (or the top 32 when considering offset is max 48 bits)
         // and store where offset is normally stored. take bottom 16 bits of offset and store in entry header
-        private class FactoredOffsetLeafEntry extends LeafEntry
+        private class FactoredOffsetLeafEntry extends SingleEntryLeaf
         {
-            private final long offset;
-
-            public FactoredOffsetLeafEntry(final long tok, final long off)
+            public FactoredOffsetLeafEntry(final long tok, final TokenTreeEntry e, final long off)
             {
-                super(tok);
-                offset = off;
+                super(tok, e, off);
             }
 
             public EntryType type()
@@ -402,13 +488,13 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
             public int offsetData()
             {
-                return (int) (offset >>> Short.SIZE);
+                return (int) (offset() >>> Short.SIZE);
             }
 
             public short offsetExtra()
             {
                 // exta offset is supposed to be an unsigned 16-bit integer
-                return (short) offset;
+                return (short) offset();
             }
         }
 
@@ -441,6 +527,16 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             public short offsetExtra()
             {
                 return smallerOffset;
+            }
+
+            public long dataNeeded()
+            {
+                throw new RuntimeException("not implemented");
+            }
+
+            public short dataMask()
+            {
+                throw new RuntimeException("not implemented");
             }
         }
 
@@ -475,6 +571,15 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                 return count;
             }
 
+            public long dataNeeded()
+            {
+                throw new RuntimeException("not implemented");
+            }
+
+            public short dataMask()
+            {
+                throw new RuntimeException("not implemented");
+            }
         }
 
     }
@@ -495,11 +600,13 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             return true;
         }
 
-        public void serialize(long childBlockIndex, ByteBuffer buf)
+        public long serialize(long childBlockIndex, ByteBuffer buf, long curDataOffset)
         {
             serializeHeader(buf);
             serializeTokens(buf);
             serializeChildOffsets(childBlockIndex, buf);
+
+            return 0; // writing interior nodes does not increase size of data portion of the tree
         }
 
         public int childCount()

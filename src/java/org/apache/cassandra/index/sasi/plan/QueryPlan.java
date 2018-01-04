@@ -23,6 +23,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.dht.AbstractBounds;
+import org.apache.cassandra.index.sasi.disk.IndexedRow;
 import org.apache.cassandra.index.sasi.disk.Token;
 import org.apache.cassandra.index.sasi.plan.Operation.OperationType;
 import org.apache.cassandra.exceptions.RequestTimeoutException;
@@ -75,7 +76,7 @@ public class QueryPlan
         private final QueryController controller;
         private final ReadExecutionController executionController;
 
-        private Iterator<DecoratedKey> currentKeys = null;
+        private Iterator<IndexedRow> currentKeys = null;
 
         public ResultIterator(Operation operationTree, QueryController controller, ReadExecutionController executionController)
         {
@@ -105,7 +106,8 @@ public class QueryPlan
 
                 while (currentKeys.hasNext())
                 {
-                    DecoratedKey key = currentKeys.next();
+                    IndexedRow indexedRow = currentKeys.next();
+                    DecoratedKey key = indexedRow.partitionKey();
 
                     if (!keyRange.right.isMinimum() && keyRange.right.compareTo(key) < 0)
                         return endOfData();

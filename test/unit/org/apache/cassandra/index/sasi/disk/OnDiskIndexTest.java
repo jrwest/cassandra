@@ -23,9 +23,13 @@ import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
+import com.carrotsearch.hppc.ObjectSet;
+import com.carrotsearch.hppc.cursors.ObjectCursor;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.BufferDecoratedKey;
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.index.sasi.plan.Expression;
@@ -224,7 +228,7 @@ public class OnDiskIndexTest
 
         OnDiskIndexBuilder iterTest = new OnDiskIndexBuilder(UTF8Type.instance, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
         for (int i = 0; i < iterCheckNums.size(); i++)
-            iterTest.add(iterCheckNums.get(i), keyAt((long) i), i);
+            iterTest.add(iterCheckNums.get(i), keyAt((long) i), i, Clustering.EMPTY, -1); // clustering row position isn't used in this test so -1 is ok to pass
 
         File iterIndex = File.createTempFile("sa-iter", ".db");
         iterIndex.deleteOnExit();
@@ -315,7 +319,7 @@ public class OnDiskIndexTest
         final int numIterations = 100000;
 
         for (long i = 0; i < numIterations; i++)
-            builder.add(LongType.instance.decompose(start + i), keyAt(i), i);
+            builder.add(LongType.instance.decompose(start + i), keyAt(i), i, Clustering.EMPTY, -1); // clustering row position isn't used in this test so -1 is ok to pass
 
         File index = File.createTempFile("on-disk-sa-sparse", "db");
         index.deleteOnExit();
@@ -441,7 +445,7 @@ public class OnDiskIndexTest
 
         OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.SPARSE);
         for (long i = lower; i <= upper; i++)
-            builder.add(LongType.instance.decompose(i), keyAt(i), i);
+            builder.add(LongType.instance.decompose(i), keyAt(i), i, Clustering.EMPTY, -1); // TODO (jwest): fix me when this test is updated
 
         File index = File.createTempFile("on-disk-sa-except-long-ranges", "db");
         index.deleteOnExit();
@@ -531,8 +535,8 @@ public class OnDiskIndexTest
             DecoratedKey key = e.getValue().left;
             Long position = e.getValue().right;
 
-            builder1.add(e.getKey(), key, position);
-            builder2.add(e.getKey(), key, position);
+            builder1.add(e.getKey(), key, position, Clustering.EMPTY, -1); // TODO (jwest): update me with the test
+            builder2.add(e.getKey(), key, position, Clustering.EMPTY, -1); // TODO (jwest): update me with the test
         }
 
         File index1 = File.createTempFile("on-disk-sa-int", "db");
@@ -595,7 +599,7 @@ public class OnDiskIndexTest
     {
         OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.SPARSE);
         for (long i = 0; i < 100000; i++)
-            builder.add(LongType.instance.decompose(i), keyAt(i), i);
+            builder.add(LongType.instance.decompose(i), keyAt(i), i, Clustering.EMPTY, -1); // TODO (jwest): update me with the test
 
         File index = File.createTempFile("on-disk-sa-multi-superblock-match", ".db");
         index.deleteOnExit();
@@ -617,9 +621,9 @@ public class OnDiskIndexTest
         }
     }
 
-    public void putAll(SortedMap<Long, Set<TokenTreeEntry>> offsets, TokenTreeBuilder ttb)
+    public void putAll(SortedMap<Long, ObjectSet<TokenTreeEntry>> offsets, TokenTreeBuilder ttb)
     {
-        for (Pair<Long, Set<TokenTreeEntry>> entry : ttb)
+        for (Pair<Long, ObjectSet<TokenTreeEntry>> entry : ttb)
             offsets.put(entry.left, entry.right);
     }
 
@@ -629,26 +633,26 @@ public class OnDiskIndexTest
         OnDiskIndexBuilder builderA = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
         OnDiskIndexBuilder builderB = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
 
-        TreeMap<Long, TreeMap<Long, Set<TokenTreeEntry>>> expected = new TreeMap<>();
+        TreeMap<Long, TreeMap<Long, ObjectSet<TokenTreeEntry>>> expected = new TreeMap<>();
 
         for (long i = 0; i <= 100; i++)
         {
-            TreeMap<Long, Set<TokenTreeEntry>> offsets = expected.get(i);
+            TreeMap<Long, ObjectSet<TokenTreeEntry>> offsets = expected.get(i);
             if (offsets == null)
                 expected.put(i, (offsets = new TreeMap<>()));
 
-            builderA.add(LongType.instance.decompose(i), keyAt(i), i);
+            builderA.add(LongType.instance.decompose(i), keyAt(i), i, Clustering.EMPTY, -1); // TODO (jwest): update me with the test?
             putAll(offsets, keyBuilder(i));
         }
 
         for (long i = 50; i < 100; i++)
         {
-            TreeMap<Long, Set<TokenTreeEntry>> offsets = expected.get(i);
+            TreeMap<Long, ObjectSet<TokenTreeEntry>> offsets = expected.get(i);
             if (offsets == null)
                 expected.put(i, (offsets = new TreeMap<>()));
 
             long position = 100L + i;
-            builderB.add(LongType.instance.decompose(i), keyAt(position), position);
+            builderB.add(LongType.instance.decompose(i), keyAt(position), position, Clustering.EMPTY, -1); // TODO (jwest): update me with the test
             putAll(offsets, keyBuilder(100L + i));
         }
 
@@ -666,14 +670,14 @@ public class OnDiskIndexTest
 
         RangeIterator<OnDiskIndex.DataTerm, CombinedTerm> union = OnDiskIndexIterator.union(a, b);
 
-        TreeMap<Long, TreeMap<Long, Set<TokenTreeEntry>>> actual = new TreeMap<>();
+        TreeMap<Long, TreeMap<Long, ObjectSet<TokenTreeEntry>>> actual = new TreeMap<>();
         while (union.hasNext())
         {
             CombinedTerm term = union.next();
 
             Long composedTerm = LongType.instance.compose(term.getTerm());
 
-            TreeMap<Long, Set<TokenTreeEntry>> offsets = actual.get(composedTerm);
+            TreeMap<Long, ObjectSet<TokenTreeEntry>> offsets = actual.get(composedTerm);
             if (offsets == null)
                 actual.put(composedTerm, (offsets = new TreeMap<>()));
 
@@ -698,7 +702,7 @@ public class OnDiskIndexTest
 
             Long composedTerm = LongType.instance.compose(term.getTerm());
 
-            TreeMap<Long, Set<TokenTreeEntry>> offsets = actual.get(composedTerm);
+            TreeMap<Long, ObjectSet<TokenTreeEntry>> offsets = actual.get(composedTerm);
             if (offsets == null)
                 actual.put(composedTerm, (offsets = new TreeMap<>()));
 
@@ -793,7 +797,7 @@ public class OnDiskIndexTest
         for (final Long key : keys)
         {
             DecoratedKey dk = keyAt(key);
-            builder.add((Long) dk.getToken().getTokenValue(), key);
+            builder.add((Long) dk.getToken().getTokenValue(), key, Clustering.EMPTY, -1); // TODO (jwest): update this to make tests more robust?
         }
 
         return builder.finish();
@@ -803,13 +807,13 @@ public class OnDiskIndexTest
     {
         Set<DecoratedKey> result = new HashSet<>();
 
-        Iterator<Pair<Long, Set<TokenTreeEntry>>> offsetIter = offsets.iterator();
+        Iterator<Pair<Long, ObjectSet<TokenTreeEntry>>> offsetIter = offsets.iterator();
         while (offsetIter.hasNext())
         {
-            Set<TokenTreeEntry> v = offsetIter.next().right;
+            ObjectSet<TokenTreeEntry> v = offsetIter.next().right;
 
-            for (TokenTreeEntry offset : v)
-                result.add(keyAt(offset.getPartitionOffset()));
+            for (ObjectCursor<TokenTreeEntry> cursor : v)
+                result.add(keyAt(cursor.value.getPartitionOffset()));
         }
         return result;
     }
@@ -908,19 +912,37 @@ public class OnDiskIndexTest
 
     private static void addAll(OnDiskIndexBuilder builder, ByteBuffer term, TokenTreeBuilder tokens)
     {
-        for (Pair<Long, Set<TokenTreeEntry>> token : tokens)
+        for (Pair<Long, ObjectSet<TokenTreeEntry>> token : tokens)
         {
-            for (TokenTreeEntry entry : token.right)
-                builder.add(term, keyAt(entry.getPartitionOffset()), entry.getPartitionOffset());
+            for (ObjectCursor<TokenTreeEntry> cursor : token.right)
+            {
+                // TODO (jwest): this needs fixing as we moved to indexed row
+                Iterator<Pair<Long, Clustering>> rowIterator = cursor.value.rowIterator();
+                while (rowIterator.hasNext())
+                {
+                    Pair<Long, Clustering> row = rowIterator.next();
+                    builder.add(term, keyAt(cursor.value.getPartitionOffset()),
+                                cursor.value.getPartitionOffset(), row.right, row.left);
+                }
+            }
         }
     }
 
-    private static class KeyConverter implements Function<Long, DecoratedKey>
-    {
-        @Override
-        public DecoratedKey apply(Long offset)
+    private static class KeyConverter implements KeyFetcher {
+        public DecoratedKey partitionKeyAt(long offset)
         {
             return keyAt(offset);
         }
+
+        public Clustering clusteringAt(long offset)
+        {
+            throw new RuntimeException("not implemented");
+        }
+
+        public ClusteringComparator clusteringComparator()
+        {
+            throw new RuntimeException("not implemented");
+        }
     }
+
 }

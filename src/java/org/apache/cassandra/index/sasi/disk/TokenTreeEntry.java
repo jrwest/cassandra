@@ -18,17 +18,23 @@
 
 package org.apache.cassandra.index.sasi.disk;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.Optional;
+import java.util.function.Function;
 
+import com.google.common.collect.Iterators;
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
+import org.apache.commons.math.stat.clustering.Cluster;
 
 import com.carrotsearch.hppc.LongObjectOpenHashMap;
-import com.carrotsearch.hppc.LongSet;
 import com.carrotsearch.hppc.cursors.LongObjectCursor;
 import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.Pair;
 
@@ -46,15 +52,45 @@ public interface TokenTreeEntry
      */
     public long getPartitionOffset();
 
+
     /**
      * Merge with another entry
      */
     public void merge(TokenTreeEntry other);
 
     /**
+     * @return true if the data stored in the entry is small enough to store in the tree's index layer.
+     * false if the data is large enough that it must be stored in the tree's data layer
+     */
+    //public boolean isPackable();
+
+    /**
+     * @return An {@link Optional} containing a single offset into the sstable data/index,
+     * if the entry can be represented by only that single long. Optional.empty() if the entry
+     * must be represented by more than a single long.
+     */
+    public Optional<Long> packableOffset();
+
+    /**
+     * @return the amount of space needed in the data layer. If {@link #packableOffset()} does
+     * not return Optional.empty() then this value will be == 0, otherwise > 0.
+     */
+    public long serializedSize();
+
+    /**
+     * Write the entry. For sub-classes that return a non-empty {@link #packableOffset()} this method
+     * should be a no-op.
+     */
+    public void write(DataOutputPlus out) throws IOException;
+
+
+    /**
      * Return an iterator over the rows stored in the entry
      */
-    public Iterator<Pair<Long, Clustering>> rowIterator();
+    //public Iterator<Pair<Long, Clustering>> rowIterator();
+
+    public Iterator<IndexedRow> rowIterator(KeyFetcher fetcher);
+
 
     public abstract static class AbstractEntry implements TokenTreeEntry {
 
@@ -68,11 +104,6 @@ public interface TokenTreeEntry
         public long getPartitionOffset()
         {
             return partitionOffset;
-        }
-
-        public Iterator<Pair<Long, Clustering>> rowIterator()
-        {
-            return Collections.emptyIterator();
         }
 
         public final int hashCode()
@@ -97,6 +128,29 @@ public interface TokenTreeEntry
             // must be for the same partition offset
             assert other instanceof PartitionOnly;
             assert other.getPartitionOffset() == getPartitionOffset();
+        }
+
+        public Optional<Long> packableOffset()
+        {
+            return Optional.of(partitionOffset);
+        }
+
+        public long serializedSize()
+        {
+            return 0;
+        }
+
+        public void write(DataOutputPlus out) throws IOException
+        {
+
+        }
+
+        public Iterator<IndexedRow> rowIterator(KeyFetcher fetcher)
+        {
+            // TODO (jwest): do we need to return with null clustering for legacy?
+            // TODO (jwest): make calls to key fetcher lazy?
+            return Iterators.singletonIterator(new IndexedRow(fetcher.partitionKeyAt(partitionOffset),
+                                                              Clustering.EMPTY, fetcher.clusteringComparator()));
         }
 
         public boolean equals(Object o)
@@ -126,8 +180,33 @@ public interface TokenTreeEntry
         {
             // nothing to do here because we assume that these
             // must be for the same partition offset
-            assert other instanceof PartitionWithStaticRow;
+            assert other instanceof PartitionWithStaticRow; // TODO (jwest): think this is wrong because partition with static row can also then have clusterings so need to be able to merge?
             assert other.getPartitionOffset() == getPartitionOffset();
+        }
+
+        public Optional<Long> packableOffset()
+        {
+            //return Optional.of(partitionOffset); // TODO (jwest): see if we can put this back
+            return Optional.empty();
+        }
+
+        public long serializedSize()
+        {
+            //return 0;
+            return Long.BYTES;
+        }
+
+        public void write(DataOutputPlus out) throws IOException
+        {
+            // TODO (jwest): this will need to be more complex once we start storing other types
+            out.writeLong(partitionOffset);
+        }
+
+        public Iterator<IndexedRow> rowIterator(KeyFetcher fetcher)
+        {
+            return Iterators.singletonIterator(new IndexedRow(fetcher.partitionKeyAt(partitionOffset),
+                                                              Clustering.STATIC_CLUSTERING,
+                                                              fetcher.clusteringComparator()));
         }
 
         public boolean equals(Object o)
@@ -180,7 +259,27 @@ public interface TokenTreeEntry
                 rows.putIfAbsent(l.key, l.value);
         }
 
-        public Iterator<Pair<Long, Clustering>> rowIterator()
+        public Optional<Long> packableOffset()
+        {
+            return Optional.empty();
+        }
+
+        public long serializedSize()
+        {
+            throw new RuntimeException("not implemented");
+        }
+
+        public void write(DataOutputPlus out) throws IOException
+        {
+            throw new RuntimeException("not implemented");
+        }
+
+        public Iterator<IndexedRow> rowIterator(KeyFetcher fetcher)
+        {
+            throw new RuntimeException("not implemented");
+        }
+
+/*        public Iterator<Pair<Long, Clustering>> rowIterator()
         {
             final Iterator<LongObjectCursor<Clustering>> inner = rows.iterator();
             return new AbstractIterator<Pair<Long, Clustering>>()
@@ -194,7 +293,7 @@ public interface TokenTreeEntry
                     return Pair.create(row.key, row.value);
                 }
             };
-        }
+        }*/
 
         public boolean equals(Object o)
         {
