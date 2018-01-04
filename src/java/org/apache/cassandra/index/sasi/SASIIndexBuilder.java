@@ -98,12 +98,14 @@ class SASIIndexBuilder extends SecondaryIndexBuilder
 
                             try (SSTableIdentityIterator partition = SSTableIdentityIterator.create(sstable, dataFile, key))
                             {
+                                long rowPos = dataFile.getPosition();
+
                                 // if the row has statics attached, it has to be indexed separately
                                 if (cfs.metadata().hasStaticColumns())
-                                    indexWriter.nextUnfilteredCluster(partition.staticRow());
+                                    indexWriter.nextUnfilteredCluster(partition.staticRow(), rowPos);
 
                                 while (partition.hasNext())
-                                    indexWriter.nextUnfilteredCluster(partition.next());
+                                    indexWriter.nextUnfilteredCluster(partition.next(), rowPos);
                             }
                         }
                         catch (IOException ex)

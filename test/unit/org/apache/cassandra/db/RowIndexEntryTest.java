@@ -358,11 +358,12 @@ public class RowIndexEntryTest extends CQLTester
                     startPosition = pos;
                 }
 
+                long rowPos = writer.position();
                 UnfilteredSerializer.serializer.serialize(unfiltered, header, writer, pos - previousRowStart, version);
 
                 // notify observers about each new row
                 if (!observers.isEmpty())
-                    observers.forEach((o) -> o.nextUnfilteredCluster(unfiltered));
+                    observers.forEach((o) -> o.nextUnfilteredCluster(unfiltered, rowPos));
 
                 lastClustering = unfiltered.clustering();
                 previousRowStart = pos;

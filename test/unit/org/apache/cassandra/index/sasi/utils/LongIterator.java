@@ -27,6 +27,8 @@ import java.util.Set;
 
 import com.carrotsearch.hppc.LongOpenHashSet;
 import com.carrotsearch.hppc.LongSet;
+import com.carrotsearch.hppc.ObjectOpenHashSet;
+import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.disk.Token;
 import org.apache.cassandra.index.sasi.disk.TokenTreeEntry;
@@ -85,9 +87,9 @@ public class LongIterator extends RangeIterator<Long, Token>
         }
 
         @Override
-        public Set<TokenTreeEntry> getOffsets()
+        public ObjectSet<TokenTreeEntry> getEntries()
         {
-            return new HashSet<>(); // TODO (jwest): use more optimized set
+            return new ObjectOpenHashSet<>();
         }
 
         @Override

@@ -21,6 +21,7 @@ import java.util.Set;
 
 import com.google.common.primitives.Longs;
 
+import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
 
@@ -38,7 +39,7 @@ public abstract class Token implements CombinedValue<Long>, Iterable<DecoratedKe
         return token;
     }
 
-    public abstract Set<TokenTreeEntry> getOffsets();
+    public abstract ObjectSet<TokenTreeEntry> getEntries();
 
     public int compareTo(CombinedValue<Long> o)
     {

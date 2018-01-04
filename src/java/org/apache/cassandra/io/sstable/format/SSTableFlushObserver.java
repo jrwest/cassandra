@@ -32,7 +32,7 @@ public interface SSTableFlushObserver
 
     /**
      * Called when a new partition in being written to the sstable,
-     * but before any cells are processed (see {@link #nextUnfilteredCluster(Unfiltered)}).
+     * but before any cells are processed (see {@link #nextUnfilteredCluster(Unfiltered, long)}).
      *
      * @param key The key being appended to SSTable.
      * @param indexPosition The position of the key in the SSTable PRIMARY_INDEX file.
@@ -46,7 +46,7 @@ public interface SSTableFlushObserver
      *
      * @param unfilteredCluster The unfiltered cluster being added to SSTable.
      */
-    void nextUnfilteredCluster(Unfiltered unfilteredCluster);
+    void nextUnfilteredCluster(Unfiltered unfilteredCluster, long indexPosition);
 
     /**
      * Called when all data is written to the file and it's ready to be finished up.

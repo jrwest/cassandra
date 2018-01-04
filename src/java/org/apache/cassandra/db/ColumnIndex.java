@@ -121,9 +121,10 @@ public class ColumnIndex
         {
             Row staticRow = iterator.staticRow();
 
+            long staticPos = writer.position();
             UnfilteredSerializer.serializer.serializeStaticRow(staticRow, header, writer, version);
             if (!observers.isEmpty())
-                observers.forEach((o) -> o.nextUnfilteredCluster(staticRow));
+                observers.forEach((o) -> o.nextUnfilteredCluster(staticRow, staticPos));
         }
     }
 
@@ -243,11 +244,12 @@ public class ColumnIndex
             startPosition = pos;
         }
 
+        long rowPos = writer.position();
         UnfilteredSerializer.serializer.serialize(unfiltered, header, writer, pos - previousRowStart, version);
 
         // notify observers about each new row
         if (!observers.isEmpty())
-            observers.forEach((o) -> o.nextUnfilteredCluster(unfiltered));
+            observers.forEach((o) -> o.nextUnfilteredCluster(unfiltered, rowPos));
 
         lastClustering = unfiltered.clustering();
         previousRowStart = pos;

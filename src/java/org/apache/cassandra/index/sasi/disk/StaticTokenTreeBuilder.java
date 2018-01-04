@@ -23,13 +23,14 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.SortedMap;
 
+import com.carrotsearch.hppc.ObjectSet;
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.index.sasi.utils.CombinedTerm;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.Pair;
 
-import com.carrotsearch.hppc.LongSet;
 import com.google.common.collect.Iterators;
 
 /**
@@ -64,17 +65,17 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         combinedTerm = term;
     }
 
-    public void add(Long token, long partitionPosition)
+    public void add(Long token, long partitionPosition, Clustering rowKey, long rowPosition)
     {
         throw new UnsupportedOperationException();
     }
 
-    public void add(SortedMap<Long, Set<TokenTreeEntry>> data)
+    public void add(SortedMap<Long, ObjectSet<TokenTreeEntry>> data)
     {
         throw new UnsupportedOperationException();
     }
 
-    public void add(Iterator<Pair<Long, Set<TokenTreeEntry>>> data)
+    public void add(Iterator<Pair<Long, ObjectSet<TokenTreeEntry>>> data)
     {
         throw new UnsupportedOperationException();
     }
@@ -89,18 +90,18 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         return tokenCount == 0;
     }
 
-    public Iterator<Pair<Long, Set<TokenTreeEntry>>> iterator()
+    public Iterator<Pair<Long, ObjectSet<TokenTreeEntry>>> iterator()
     {
         Iterator<Token> iterator = combinedTerm.getTokenIterator();
-        return new AbstractIterator<Pair<Long, Set<TokenTreeEntry>>>()
+        return new AbstractIterator<Pair<Long, ObjectSet<TokenTreeEntry>>>()
         {
-            protected Pair<Long, Set<TokenTreeEntry>> computeNext()
+            protected Pair<Long, ObjectSet<TokenTreeEntry>> computeNext()
             {
                 if (!iterator.hasNext())
                     return endOfData();
 
                 Token token = iterator.next();
-                return Pair.create(token.get(), token.getOffsets());
+                return Pair.create(token.get(), token.getEntries());
             }
         };
     }
@@ -247,7 +248,7 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
             while (tokens.hasNext())
             {
                 Token entry = tokens.next();
-                createEntry(entry.get(), entry.getOffsets()).serialize(buf);
+                createEntry(entry.get(), entry.getEntries()).serialize(buf);
             }
         }
 

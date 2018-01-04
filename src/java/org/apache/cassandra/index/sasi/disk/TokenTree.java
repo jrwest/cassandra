@@ -20,6 +20,8 @@ package org.apache.cassandra.index.sasi.disk;
 import java.io.IOException;
 import java.util.*;
 
+import com.carrotsearch.hppc.ObjectOpenHashSet;
+import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.utils.AbstractIterator;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
@@ -408,13 +410,13 @@ public class TokenTree
             });
         }
 
-        public Set<TokenTreeEntry> getOffsets()
+        public ObjectSet<TokenTreeEntry> getEntries()
         {
-            Set<TokenTreeEntry> offsets = new HashSet<>(); // TODO (jwest): use a more optimized set
+            ObjectSet<TokenTreeEntry> offsets = new ObjectOpenHashSet<>();
             for (TokenInfo i : info)
             {
                 for (long offset : i.fetchOffsets())
-                    offsets.add(new TokenTreeEntry(offset));
+                    offsets.add(new TokenTreeEntry.PartitionOnly(offset));
             }
 
             return offsets;

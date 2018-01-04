@@ -27,6 +27,7 @@ import java.util.concurrent.*;
 
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.compaction.OperationType;
@@ -48,6 +49,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.Uninterruptibles;
 
+import org.apache.commons.math.stat.clustering.Cluster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -110,12 +112,12 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
         currentKeyPosition = curPosition;
     }
 
-    public void nextUnfilteredCluster(Unfiltered unfiltered)
+    public void nextUnfilteredCluster(Unfiltered unfiltered, long curPosition)
     {
         if (!unfiltered.isRow())
             return;
 
-        Row row = (Row) unfiltered;
+        final Row row = (Row) unfiltered;
 
         indexes.forEach((column, index) -> {
             ByteBuffer value = ColumnIndex.getValueOf(column, row, nowInSec);
@@ -125,7 +127,7 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
             if (index == null)
                 throw new IllegalArgumentException("No index exists for column " + column.name.toString());
 
-            index.add(value.duplicate(), currentKey, currentKeyPosition);
+            index.add(value.duplicate(), currentKey, currentKeyPosition, row.clustering(), curPosition);
         });
     }
 
@@ -193,7 +195,7 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
             this.currentBuilder = newIndexBuilder();
         }
 
-        public void add(ByteBuffer term, DecoratedKey key, long keyPosition)
+        public void add(ByteBuffer term, DecoratedKey key, long keyPosition, Clustering clustering, long rowPosition)
         {
             if (term.remaining() == 0)
                 return;
@@ -231,7 +233,7 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
                     }
                 }
 
-                currentBuilder.add(token, key, keyPosition);
+                currentBuilder.add(token, key, keyPosition, clustering, rowPosition);
                 isAdded = true;
             }
 

@@ -200,7 +200,7 @@ public class SSTableFlushObserverTest
         }
 
         @Override
-        public void nextUnfilteredCluster(Unfiltered row)
+        public void nextUnfilteredCluster(Unfiltered row, long indexPosition)
         {
             if (row.isRow())
                 ((Row) row).forEach((c) -> rows.put(currentKey, (Cell) c));

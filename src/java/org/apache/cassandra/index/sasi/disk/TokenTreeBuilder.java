@@ -20,12 +20,16 @@ package org.apache.cassandra.index.sasi.disk;
 import java.io.IOException;
 import java.util.*;
 
+import com.carrotsearch.hppc.ObjectOpenHashSet;
+import com.carrotsearch.hppc.ObjectSet;
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.Pair;
 
 import com.carrotsearch.hppc.LongSet;
 
-public interface TokenTreeBuilder extends Iterable<Pair<Long, Set<TokenTreeEntry>>>
+public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTreeEntry>>>
 {
     int BLOCK_BYTES = 4096;
     int BLOCK_HEADER_BYTES = 64;
@@ -63,10 +67,10 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, Set<TokenTreeEntry
         }
     }
 
-    void add(Long token, long partitionPosition);
+    void add(Long token, long partitionPosition, Clustering rowKey, long rowPosition);
     void add(Long token, TokenTreeEntry entry);
-    void add(SortedMap<Long, Set<TokenTreeEntry>> data);
-    void add(Iterator<Pair<Long, Set<TokenTreeEntry>>> data);
+    void add(SortedMap<Long, ObjectSet<TokenTreeEntry>> data);
+    void add(Iterator<Pair<Long, ObjectSet<TokenTreeEntry>>> data);
     void add(TokenTreeBuilder ttb);
 
     boolean isEmpty();

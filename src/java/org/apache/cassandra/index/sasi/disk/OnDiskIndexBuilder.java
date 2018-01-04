@@ -22,7 +22,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import com.carrotsearch.hppc.ObjectSet;
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.index.sasi.plan.Expression.Op;
 import org.apache.cassandra.index.sasi.sa.IndexedTerm;
 import org.apache.cassandra.index.sasi.sa.IntegralSA;
@@ -163,7 +166,7 @@ public class OnDiskIndexBuilder
         this.marksPartials = marksPartials;
     }
 
-    public OnDiskIndexBuilder add(ByteBuffer term, DecoratedKey key, long keyPosition)
+    public OnDiskIndexBuilder add(ByteBuffer term, DecoratedKey key, long keyPosition, Clustering clustering, long rowPosition)
     {
         if (term.remaining() >= MAX_TERM_SIZE)
         {
@@ -183,7 +186,9 @@ public class OnDiskIndexBuilder
             estimatedBytes += 64 + 48 + term.remaining();
         }
 
-        tokens.add((Long) key.getToken().getTokenValue(), keyPosition);
+        // TODO (jwest): what does clustering return when there are now clustering columns? what should rowPosition be set to? is it the same as keyPosition? or
+        // the start of the data itself?
+        tokens.add((Long) key.getToken().getTokenValue(), keyPosition, clustering, rowPosition);
 
         // calculate key range (based on actual key values) for current index
         minKey = (minKey == null || keyComparator.compare(minKey, key.getKey()) > 0) ? key.getKey() : minKey;
@@ -662,7 +667,7 @@ public class OnDiskIndexBuilder
         {
             term.serialize(buffer);
             buffer.writeByte((byte) keys.getTokenCount());
-            for (Pair<Long, Set<TokenTreeEntry>> key : keys)
+            for (Pair<Long, ObjectSet<TokenTreeEntry>> key : keys)
                 buffer.writeLong(key.left);
         }
 
