@@ -72,7 +72,7 @@ docker_image: &docker_image kjellman/cassandra-test:0.4.3
 version: 2
 jobs:
   build:
-    <<: *env_settings
+    <<: *default_env_settings
     parallelism: 1 # This job doesn't benefit from parallelism
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
@@ -140,7 +140,7 @@ jobs:
                 - cassandra
                 - .m2
   unit_tests:
-    <<: *env_settings
+    <<: *default_env_settings
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
     docker:
