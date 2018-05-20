@@ -42,53 +42,28 @@ public class View implements Iterable<SSTableIndex>
     private final AbstractType<?> keyValidator;
     private final IntervalTree<Key, SSTableIndex, Interval<Key, SSTableIndex>> keyIntervalTree;
 
-    public View(ColumnIndex index, Set<SSTableIndex> indexes)
-    {
-        this(index, Collections.<SSTableIndex>emptyList(), Collections.<SSTableReader>emptyList(), indexes);
-    }
 
-    public View(ColumnIndex index,
-                Collection<SSTableIndex> currentView,
-                Collection<SSTableReader> oldSSTables,
-                Set<SSTableIndex> newIndexes)
-    {
-        Map<Descriptor, SSTableIndex> newView = new HashMap<>();
+    public View(ColumnIndex index, Collection<SSTableIndex> indexes) {
+        this.view = new HashMap<>();
+        this.keyValidator = index.keyValidator();
 
         AbstractType<?> validator = index.getValidator();
         TermTree.Builder termTreeBuilder = (validator instanceof AsciiType || validator instanceof UTF8Type)
-                                            ? new PrefixTermTree.Builder(index.getMode().mode, validator)
-                                            : new RangeTermTree.Builder(index.getMode().mode, validator);
+                                           ? new PrefixTermTree.Builder(index.getMode().mode, validator)
+                                           : new RangeTermTree.Builder(index.getMode().mode, validator);
 
         List<Interval<Key, SSTableIndex>> keyIntervals = new ArrayList<>();
-        // Ensure oldSSTables and newIndexes are disjoint (in index redistribution case the intersection can be non-empty).
-        // also favor newIndexes over currentView in case an SSTable has been re-opened (also occurs during redistribution)
-        // See CASSANDRA-14055
-        Collection<SSTableReader> toRemove = new HashSet<>(oldSSTables);
-        toRemove.removeAll(newIndexes.stream().map(SSTableIndex::getSSTable).collect(Collectors.toSet()));
-        for (SSTableIndex sstableIndex : Iterables.concat(newIndexes, currentView))
+        for (SSTableIndex sstableIndex : indexes)
         {
-            SSTableReader sstable = sstableIndex.getSSTable();
-            if (toRemove.contains(sstable) || sstable.isMarkedCompacted() || newView.containsKey(sstable.descriptor))
-            {
-                sstableIndex.release();
-                continue;
-            }
-
-            newView.put(sstable.descriptor, sstableIndex);
-
+            this.view.put(sstableIndex.getSSTable().descriptor, sstableIndex);
             termTreeBuilder.add(sstableIndex);
             keyIntervals.add(Interval.create(new Key(sstableIndex.minKey(), index.keyValidator()),
                                              new Key(sstableIndex.maxKey(), index.keyValidator()),
                                              sstableIndex));
         }
 
-        this.view = newView;
         this.termTree = termTreeBuilder.build();
-        this.keyValidator = index.keyValidator();
         this.keyIntervalTree = IntervalTree.build(keyIntervals);
-
-        if (keyIntervalTree.intervalCount() != termTree.intervalCount())
-            throw new IllegalStateException(String.format("mismatched sizes for intervals tree for keys vs terms: %d != %d", keyIntervalTree.intervalCount(), termTree.intervalCount()));
     }
 
     public Set<SSTableIndex> match(Expression expression)

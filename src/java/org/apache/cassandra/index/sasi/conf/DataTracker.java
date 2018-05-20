@@ -18,12 +18,15 @@
 package org.apache.cassandra.index.sasi.conf;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+
+import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.index.sasi.SSTableIndex;
@@ -70,12 +73,28 @@ public class DataTracker
         final Set<SSTableReader> indexedSSTables = built.right;
 
         View currentView, newView;
+        Collection<SSTableIndex> newViewIndexes = new HashSet<>();
+        Collection<SSTableIndex> releaseableIndexes = new ArrayList<>();
+        Collection<SSTableReader> toRemove = new HashSet<>(oldSSTables);
+        toRemove.removeAll(newIndexes.stream().map(SSTableIndex::getSSTable).collect(Collectors.toSet()));
         do
         {
             currentView = view.get();
-            newView = new View(columnIndex, currentView.getIndexes(), oldSSTables, newIndexes);
+            newViewIndexes.clear();
+            releaseableIndexes.clear();
+            for (SSTableIndex sstableIndex : Iterables.concat(newIndexes, currentView))
+            {
+                SSTableReader sstable = sstableIndex.getSSTable();
+                if (toRemove.contains(sstable) || sstable.isMarkedCompacted() || newViewIndexes.contains(sstableIndex))
+                    releaseableIndexes.add(sstableIndex);
+                else
+                    newViewIndexes.add(sstableIndex);
+            }
+
+            newView = new View(columnIndex, newViewIndexes);
         }
         while (!view.compareAndSet(currentView, newView));
+        releaseableIndexes.stream().forEach(i -> i.release());
 
         return newSSTables.stream().filter(sstable -> !indexedSSTables.contains(sstable)).collect(Collectors.toList());
     }
