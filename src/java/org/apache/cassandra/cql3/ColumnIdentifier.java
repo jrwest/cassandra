@@ -118,6 +118,12 @@ public class ColumnIdentifier implements IMeasurableMemory, Comparable<ColumnIde
         this(bytes, type.getString(bytes), false);
     }
 
+    public ColumnIdentifier(ByteBuffer bytes, String text)
+    {
+        this(bytes, text, false);
+    }
+
+
     private ColumnIdentifier(ByteBuffer bytes, String text, boolean interned)
     {
         this.bytes = bytes;
