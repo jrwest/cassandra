@@ -19,6 +19,7 @@ package org.apache.cassandra.index.sasi.disk;
 
 import com.google.common.primitives.Longs;
 
+import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
 
@@ -38,7 +39,7 @@ public abstract class IndexEntry implements CombinedValue<Long>, Iterable<Decora
         return token;
     }
 
-    public abstract LongSet getOffsets();
+    public abstract ObjectSet<TokenTreeBuilder.Entry> getOffsets();
 
     public int compareTo(CombinedValue<Long> o)
     {

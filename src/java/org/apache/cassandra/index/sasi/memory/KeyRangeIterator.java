@@ -23,8 +23,10 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListSet;
 
+import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.disk.IndexEntry;
+import org.apache.cassandra.index.sasi.disk.TokenTreeBuilder;
 import org.apache.cassandra.index.sasi.utils.AbstractIterator;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
@@ -93,13 +95,10 @@ public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
             }};
         }
 
-        public LongSet getOffsets()
+        public ObjectSet<TokenTreeBuilder.Entry> getOffsets()
         {
-            LongSet offsets = new LongOpenHashSet(4);
-            for (DecoratedKey key : keys)
-                offsets.add((long) key.getToken().getTokenValue());
-
-            return offsets;
+            // for an in-memory index entry we don't have/know of any on-disk offsets
+            throw new UnsupportedOperationException();
         }
 
         public void merge(CombinedValue<Long> other)

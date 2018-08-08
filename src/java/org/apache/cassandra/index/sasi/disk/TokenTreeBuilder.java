@@ -20,12 +20,13 @@ package org.apache.cassandra.index.sasi.disk;
 import java.io.IOException;
 import java.util.*;
 
+import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.Pair;
 
-import com.carrotsearch.hppc.LongSet;
+import com.carrotsearch.hppc.ObjectSet;
 
-public interface TokenTreeBuilder extends Iterable<Pair<Long, LongSet>>
+public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTreeBuilder.Entry>>>
 {
     int BLOCK_BYTES = 4096;
     int BLOCK_HEADER_BYTES = 64;
@@ -63,9 +64,14 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, LongSet>>
         }
     }
 
-    void add(Long token, long keyPosition);
-    void add(SortedMap<Long, LongSet> data);
-    void add(Iterator<Pair<Long, LongSet>> data);
+    default void add(Long token, long position)
+    {
+        add(token, new Entry(position));
+    }
+
+    void add(Long token, Entry entry);
+    void add(SortedMap<Long, ObjectSet<Entry>> data);
+    void add(Iterator<Pair<Long, ObjectSet<Entry>>> data);
     void add(TokenTreeBuilder ttb);
 
     boolean isEmpty();
@@ -75,4 +81,36 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, LongSet>>
 
     int serializedSize();
     void write(DataOutputPlus out) throws IOException;
+
+    public static class Entry
+    {
+        private final long partitionOffset;
+
+        public Entry(long partitionOffset)
+        {
+            this.partitionOffset = partitionOffset;
+        }
+
+        public long partitionOffset()
+        {
+            return partitionOffset;
+        }
+
+        public boolean equals(Object o)
+        {
+            if (this == o) return true;
+
+            if (!(o instanceof Entry)) return false;
+
+            Entry entry = (Entry) o;
+            return entry.partitionOffset == partitionOffset;
+        }
+
+        public int hashCode()
+        {
+            return new HashCodeBuilder(17, 37)
+                   .append(partitionOffset)
+                   .toHashCode();
+        }
+    }
 }

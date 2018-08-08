@@ -24,6 +24,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import com.carrotsearch.hppc.ObjectSet;
+import com.carrotsearch.hppc.cursors.ObjectCursor;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.FBUtilities;
@@ -272,8 +274,8 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         protected void serializeOverflowCollisions(ByteBuffer buf)
         {
             if (overflowCollisions != null)
-                for (LongCursor offset : overflowCollisions)
-                    buf.putLong(offset.value);
+                for (LongCursor entry : overflowCollisions)
+                    buf.putLong(entry.value);
         }
 
         public void serialize(long childBlockIndex, ByteBuffer buf)
@@ -285,7 +287,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
         protected abstract void serializeData(ByteBuffer buf);
 
-        protected LeafEntry createEntry(final long tok, final LongSet offsets)
+        protected LeafEntry createEntry(final long tok, final ObjectSet<Entry> offsets)
         {
             int offsetCount = offsets.size();
             switch (offsetCount)
@@ -293,7 +295,8 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                 case 0:
                     throw new AssertionError("no offsets for token " + tok);
                 case 1:
-                    long offset = offsets.toArray()[0];
+                    Entry entry = (Entry) offsets.toArray()[0];
+                    long offset = entry.partitionOffset();
                     if (offset > MAX_OFFSET)
                         throw new AssertionError("offset " + offset + " cannot be greater than " + MAX_OFFSET);
                     else if (offset <= Integer.MAX_VALUE)
@@ -301,7 +304,9 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                     else
                         return new FactoredOffsetLeafEntry(tok, offset);
                 case 2:
-                    long[] rawOffsets = offsets.toArray();
+                    Object[] entries = offsets.toArray();
+                    long[] rawOffsets = new long[] { ((Entry) entries[0]).partitionOffset(),
+                                                     ((Entry) entries[1]).partitionOffset() };
                     if (rawOffsets[0] <= Integer.MAX_VALUE && rawOffsets[1] <= Integer.MAX_VALUE &&
                         (rawOffsets[0] <= Short.MAX_VALUE || rawOffsets[1] <= Short.MAX_VALUE))
                         return new PackedCollisionLeafEntry(tok, rawOffsets);
@@ -312,18 +317,18 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             }
         }
 
-        private LeafEntry createOverflowEntry(final long tok, final int offsetCount, final LongSet offsets)
+        private LeafEntry createOverflowEntry(final long tok, final int offsetCount, final ObjectSet<Entry> entries)
         {
             if (overflowCollisions == null)
                 overflowCollisions = new LongArrayList();
 
             LeafEntry entry = new OverflowCollisionLeafEntry(tok, (short) overflowCollisions.size(), (short) offsetCount);
-            for (LongCursor o : offsets)
+            for (ObjectCursor<Entry> e : entries)
             {
                 if (overflowCollisions.size() == OVERFLOW_TRAILER_CAPACITY)
                     throw new AssertionError("cannot have more than " + OVERFLOW_TRAILER_CAPACITY + " overflow collisions per leaf");
                 else
-                    overflowCollisions.add(o.value);
+                    overflowCollisions.add(e.value.partitionOffset());
             }
             return entry;
         }

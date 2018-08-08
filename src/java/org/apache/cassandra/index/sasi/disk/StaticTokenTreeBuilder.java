@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.SortedMap;
 
+import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.index.sasi.utils.CombinedTerm;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -63,17 +64,17 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         combinedTerm = term;
     }
 
-    public void add(Long token, long keyPosition)
+    public void add(Long token, Entry entry)
     {
         throw new UnsupportedOperationException();
     }
 
-    public void add(SortedMap<Long, LongSet> data)
+    public void add(SortedMap<Long, ObjectSet<Entry>> data)
     {
         throw new UnsupportedOperationException();
     }
 
-    public void add(Iterator<Pair<Long, LongSet>> data)
+    public void add(Iterator<Pair<Long, ObjectSet<Entry>>> data)
     {
         throw new UnsupportedOperationException();
     }
@@ -83,12 +84,12 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         return tokenCount == 0;
     }
 
-    public Iterator<Pair<Long, LongSet>> iterator()
+    public Iterator<Pair<Long, ObjectSet<Entry>>> iterator()
     {
         Iterator<IndexEntry> iterator = combinedTerm.getEntryIterator();
-        return new AbstractIterator<Pair<Long, LongSet>>()
+        return new AbstractIterator<Pair<Long, ObjectSet<Entry>>>()
         {
-            protected Pair<Long, LongSet> computeNext()
+            protected Pair<Long, ObjectSet<Entry>> computeNext()
             {
                 if (!iterator.hasNext())
                     return endOfData();

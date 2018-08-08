@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.plan.Expression.Op;
 import org.apache.cassandra.index.sasi.sa.IndexedTerm;
@@ -662,7 +663,7 @@ public class OnDiskIndexBuilder
         {
             term.serialize(buffer);
             buffer.writeByte((byte) keys.getTokenCount());
-            for (Pair<Long, LongSet> key : keys)
+            for (Pair<Long, ObjectSet<TokenTreeBuilder.Entry>> key : keys)
                 buffer.writeLong(key.left);
         }
 

@@ -25,8 +25,11 @@ import java.util.List;
 
 import com.carrotsearch.hppc.LongOpenHashSet;
 import com.carrotsearch.hppc.LongSet;
+import com.carrotsearch.hppc.ObjectOpenHashSet;
+import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.disk.IndexEntry;
+import org.apache.cassandra.index.sasi.disk.TokenTreeBuilder;
 
 public class LongIterator extends RangeIterator<Long, IndexEntry>
 {
@@ -82,9 +85,10 @@ public class LongIterator extends RangeIterator<Long, IndexEntry>
         }
 
         @Override
-        public LongSet getOffsets()
+        public ObjectSet<TokenTreeBuilder.Entry> getOffsets()
         {
-            return new LongOpenHashSet(4);
+            // dont have any offsets because we dont have knowledge of any
+            throw new UnsupportedOperationException();
         }
 
         @Override
