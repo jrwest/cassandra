@@ -46,11 +46,11 @@ public class CombinedTerm implements CombinedValue<DataTerm>
         return term.isPartial();
     }
 
-    public RangeIterator<Long, Token> getTokenIterator()
+    public RangeIterator<Long, IndexEntry> getEntryIterator()
     {
-        RangeIterator.Builder<Long, Token> union = RangeUnionIterator.builder();
-        union.add(term.getTokens());
-        mergedTerms.stream().map(OnDiskIndex.DataTerm::getTokens).forEach(union::add);
+        RangeIterator.Builder<Long, IndexEntry> union = RangeUnionIterator.builder();
+        union.add(term.getEntries());
+        mergedTerms.stream().map(OnDiskIndex.DataTerm::getEntries).forEach(union::add);
 
         return union.build();
     }

@@ -38,7 +38,7 @@ import org.apache.cassandra.index.sasi.SSTableIndex;
 import org.apache.cassandra.index.sasi.TermIterator;
 import org.apache.cassandra.index.sasi.conf.ColumnIndex;
 import org.apache.cassandra.index.sasi.conf.view.View;
-import org.apache.cassandra.index.sasi.disk.Token;
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.index.sasi.exceptions.TimeQuotaExceededException;
 import org.apache.cassandra.index.sasi.plan.Operation.OperationType;
 import org.apache.cassandra.index.sasi.utils.RangeIntersectionIterator;
@@ -57,7 +57,7 @@ public class QueryController
     private final ColumnFamilyStore cfs;
     private final PartitionRangeReadCommand command;
     private final DataRange range;
-    private final Map<Collection<Expression>, List<RangeIterator<Long, Token>>> resources = new HashMap<>();
+    private final Map<Collection<Expression>, List<RangeIterator<Long, IndexEntry>>> resources = new HashMap<>();
 
     public QueryController(ColumnFamilyStore cfs, PartitionRangeReadCommand command, long timeQuotaMs)
     {
@@ -127,22 +127,22 @@ public class QueryController
      *
      * @return The range builder based on given expressions and operation type.
      */
-    public RangeIterator.Builder<Long, Token> getIndexes(OperationType op, Collection<Expression> expressions)
+    public RangeIterator.Builder<Long, IndexEntry> getIndexes(OperationType op, Collection<Expression> expressions)
     {
         if (resources.containsKey(expressions))
             throw new IllegalArgumentException("Can't process the same expressions multiple times.");
 
-        RangeIterator.Builder<Long, Token> builder = op == OperationType.OR
-                                                ? RangeUnionIterator.<Long, Token>builder()
-                                                : RangeIntersectionIterator.<Long, Token>builder();
+        RangeIterator.Builder<Long, IndexEntry> builder = op == OperationType.OR
+                                                ? RangeUnionIterator.<Long, IndexEntry>builder()
+                                                : RangeIntersectionIterator.<Long, IndexEntry>builder();
 
         Set<Map.Entry<Expression, Set<SSTableIndex>>> view = getView(op, expressions).entrySet();
-        List<RangeIterator<Long, Token>> perIndexUnions = new ArrayList<>(view.size());
+        List<RangeIterator<Long, IndexEntry>> perIndexUnions = new ArrayList<>(view.size());
 
         for (Map.Entry<Expression, Set<SSTableIndex>> e : view)
         {
             @SuppressWarnings("resource") // RangeIterators are closed by releaseIndexes
-            RangeIterator<Long, Token> index = TermIterator.build(e.getKey(), e.getValue());
+            RangeIterator<Long, IndexEntry> index = TermIterator.build(e.getKey(), e.getValue());
 
             builder.add(index);
             perIndexUnions.add(index);
@@ -169,7 +169,7 @@ public class QueryController
             releaseIndexes(resources.remove(operation.expressions.values()));
     }
 
-    private void releaseIndexes(List<RangeIterator<Long, Token>> indexes)
+    private void releaseIndexes(List<RangeIterator<Long, IndexEntry>> indexes)
     {
         if (indexes == null)
             return;

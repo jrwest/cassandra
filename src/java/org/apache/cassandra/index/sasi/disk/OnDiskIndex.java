@@ -217,7 +217,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
      *
      * @return Iterator which contains rows for all of the terms from the given range.
      */
-    public RangeIterator<Long, Token> search(Expression exp)
+    public RangeIterator<Long, IndexEntry> search(Expression exp)
     {
         assert mode.supports(exp.getOp());
 
@@ -229,7 +229,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
         if (exp.getOp() == Op.EQ)
         {
             DataTerm term = getTerm(exp.lower.value);
-            return term == null ? null : term.getTokens();
+            return term == null ? null : term.getEntries();
         }
 
         // convert single NOT_EQ to range with exclusion
@@ -269,11 +269,11 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
         assert max != null;
         ranges.add(new Expression(expression).setOp(Op.RANGE).setLower(max).setUpper(expression.upper));
 
-        RangeUnionIterator.Builder<Long, Token> builder = RangeUnionIterator.builder();
+        RangeUnionIterator.Builder<Long, IndexEntry> builder = RangeUnionIterator.builder();
         for (Expression e : ranges)
         {
             @SuppressWarnings("resource")
-            RangeIterator<Long, Token> range = searchRange(e);
+            RangeIterator<Long, IndexEntry> range = searchRange(e);
             if (range != null)
                 builder.add(range);
         }
@@ -281,7 +281,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
         return builder.build();
     }
 
-    private RangeIterator<Long, Token> searchRange(Expression range)
+    private RangeIterator<Long, IndexEntry> searchRange(Expression range)
     {
         Expression.Bound lower = range.lower;
         Expression.Bound upper = range.upper;
@@ -297,13 +297,13 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
                 : searchRange(lowerBlock, lower, upperBlock, upper);
     }
 
-    private RangeIterator<Long, Token> searchRange(int lowerBlock, Expression.Bound lower, int upperBlock, Expression.Bound upper)
+    private RangeIterator<Long, IndexEntry> searchRange(int lowerBlock, Expression.Bound lower, int upperBlock, Expression.Bound upper)
     {
         // if lower is at the beginning of the block that means we can just do a single iterator per block
         SearchResult<DataTerm> lowerPosition = (lower == null) ? null : searchIndex(lower.value, lowerBlock);
         SearchResult<DataTerm> upperPosition = (upper == null) ? null : searchIndex(upper.value, upperBlock);
 
-        RangeUnionIterator.Builder<Long, Token> builder = RangeUnionIterator.builder();
+        RangeUnionIterator.Builder<Long, IndexEntry> builder = RangeUnionIterator.builder();
 
         // optimistically assume that first and last blocks are full block reads, saves at least 3 'else' conditions
         int firstFullBlockIdx = lowerBlock, lastFullBlockIdx = upperBlock;
@@ -376,16 +376,16 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
         return builder.build();
     }
 
-    private RangeIterator<Long, Token> searchPoint(int lowerBlock, Expression expression)
+    private RangeIterator<Long, IndexEntry> searchPoint(int lowerBlock, Expression expression)
     {
         Iterator<DataTerm> terms = new TermIterator(lowerBlock, expression, IteratorOrder.DESC);
-        RangeUnionIterator.Builder<Long, Token> builder = RangeUnionIterator.builder();
+        RangeUnionIterator.Builder<Long, IndexEntry> builder = RangeUnionIterator.builder();
 
         while (terms.hasNext())
         {
             try
             {
-                builder.add(terms.next().getTokens());
+                builder.add(terms.next().getEntries());
             }
             finally
             {
@@ -396,7 +396,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
         return builder.build();
     }
 
-    private RangeIterator<Long, Token> getBlockIterator(int blockIdx)
+    private RangeIterator<Long, IndexEntry> getBlockIterator(int blockIdx)
     {
         DataBlock block = dataLevel.getBlock(blockIdx);
         return (block.hasCombinedIndex)
@@ -529,7 +529,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
             tokenTree = new TokenTree(descriptor, buffer);
         }
 
-        public RangeIterator<Long, Token> iterator()
+        public RangeIterator<Long, IndexEntry> iterator()
         {
             return tokenTree.iterator(keyFetcher);
         }
@@ -571,10 +571,10 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
             return new DataTerm(data, termSize, getBlockIndex());
         }
 
-        public RangeIterator<Long, Token> getRange(int start, int end)
+        public RangeIterator<Long, IndexEntry> getRange(int start, int end)
         {
-            RangeUnionIterator.Builder<Long, Token> builder = RangeUnionIterator.builder();
-            NavigableMap<Long, Token> sparse = new TreeMap<>();
+            RangeUnionIterator.Builder<Long, IndexEntry> builder = RangeUnionIterator.builder();
+            NavigableMap<Long, IndexEntry> sparse = new TreeMap<>();
 
             for (int i = start; i < end; i++)
             {
@@ -582,23 +582,23 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
 
                 if (term.isSparse())
                 {
-                    NavigableMap<Long, Token> tokens = term.getSparseTokens();
-                    for (Map.Entry<Long, Token> t : tokens.entrySet())
+                    NavigableMap<Long, IndexEntry> entries = term.getSparseEntries();
+                    for (Map.Entry<Long, IndexEntry> t : entries.entrySet())
                     {
-                        Token token = sparse.get(t.getKey());
-                        if (token == null)
+                        IndexEntry entry = sparse.get(t.getKey());
+                        if (entry == null)
                             sparse.put(t.getKey(), t.getValue());
                         else
-                            token.merge(t.getValue());
+                            entry.merge(t.getValue());
                     }
                 }
                 else
                 {
-                    builder.add(term.getTokens());
+                    builder.add(term.getEntries());
                 }
             }
 
-            PrefetchedTokensIterator prefetched = sparse.isEmpty() ? null : new PrefetchedTokensIterator(sparse);
+            PrefetchedIndexEntryIterator prefetched = sparse.isEmpty() ? null : new PrefetchedIndexEntryIterator(sparse);
 
             if (builder.rangeCount() == 0)
                 return prefetched;
@@ -631,12 +631,12 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
             this.perBlockIndex = perBlockIndex;
         }
 
-        public RangeIterator<Long, Token> getTokens()
+        public RangeIterator<Long, IndexEntry> getEntries()
         {
             final long blockEnd = FBUtilities.align(content.position(), OnDiskIndexBuilder.BLOCK_SIZE);
 
             if (isSparse())
-                return new PrefetchedTokensIterator(getSparseTokens());
+                return new PrefetchedIndexEntryIterator(getSparseEntries());
 
             long offset = blockEnd + 4 + content.getInt(getDataOffset() + 1);
             return new TokenTree(descriptor, indexFile.duplicate().position(offset)).iterator(keyFetcher);
@@ -647,7 +647,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
             return content.get(getDataOffset()) > 0;
         }
 
-        public NavigableMap<Long, Token> getSparseTokens()
+        public NavigableMap<Long, IndexEntry> getSparseEntries()
         {
             long ptrOffset = getDataOffset();
 
@@ -655,16 +655,16 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
 
             assert size > 0;
 
-            NavigableMap<Long, Token> individualTokens = new TreeMap<>();
+            NavigableMap<Long, IndexEntry> individualEntries = new TreeMap<>();
             for (int i = 0; i < size; i++)
             {
-                Token token = perBlockIndex.get(content.getLong(ptrOffset + 1 + (8 * i)), keyFetcher);
+                IndexEntry entry = perBlockIndex.get(content.getLong(ptrOffset + 1 + (8 * i)), keyFetcher);
 
-                assert token != null;
-                individualTokens.put(token.get(), token);
+                assert entry != null;
+                individualEntries.put(entry.get(), entry);
             }
 
-            return individualTokens;
+            return individualEntries;
         }
 
         public int compareTo(DataTerm other)
@@ -686,19 +686,19 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
         }
     }
 
-    private static class PrefetchedTokensIterator extends RangeIterator<Long, Token>
+    private static class PrefetchedIndexEntryIterator extends RangeIterator<Long, IndexEntry>
     {
-        private final NavigableMap<Long, Token> tokens;
-        private PeekingIterator<Token> currentIterator;
+        private final NavigableMap<Long, IndexEntry> entries;
+        private PeekingIterator<IndexEntry> currentIterator;
 
-        public PrefetchedTokensIterator(NavigableMap<Long, Token> tokens)
+        public PrefetchedIndexEntryIterator(NavigableMap<Long, IndexEntry> entries)
         {
-            super(tokens.firstKey(), tokens.lastKey(), tokens.size());
-            this.tokens = tokens;
-            this.currentIterator = Iterators.peekingIterator(tokens.values().iterator());
+            super(entries.firstKey(), entries.lastKey(), entries.size());
+            this.entries = entries;
+            this.currentIterator = Iterators.peekingIterator(entries.values().iterator());
         }
 
-        protected Token computeNext()
+        protected IndexEntry computeNext()
         {
             return currentIterator != null && currentIterator.hasNext()
                     ? currentIterator.next()
@@ -707,7 +707,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
 
         protected void performSkipTo(Long nextToken)
         {
-            currentIterator = Iterators.peekingIterator(tokens.tailMap(nextToken, true).values().iterator());
+            currentIterator = Iterators.peekingIterator(entries.tailMap(nextToken, true).values().iterator());
         }
 
         public void close() throws IOException

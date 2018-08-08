@@ -79,12 +79,12 @@ public class TokenTree
         return tokenCount;
     }
 
-    public RangeIterator<Long, Token> iterator(Function<Long, DecoratedKey> keyFetcher)
+    public RangeIterator<Long, IndexEntry> iterator(Function<Long, DecoratedKey> keyFetcher)
     {
         return new TokenTreeIterator(file.duplicate(), keyFetcher);
     }
 
-    public OnDiskToken get(final long searchToken, Function<Long, DecoratedKey> keyFetcher)
+    public OnDiskIndexEntry get(final long searchToken, Function<Long, DecoratedKey> keyFetcher)
     {
         seekToLeaf(searchToken, file);
         long leafStart = file.position();
@@ -95,7 +95,7 @@ public class TokenTree
 
         file.position(leafStart + TokenTreeBuilder.BLOCK_HEADER_BYTES);
 
-        OnDiskToken token = OnDiskToken.getTokenAt(file, tokenIndex, leafSize, keyFetcher);
+        OnDiskIndexEntry token = OnDiskIndexEntry.getTokenAt(file, tokenIndex, leafSize, keyFetcher);
         return token.get().equals(searchToken) ? token : null;
     }
 
@@ -209,7 +209,7 @@ public class TokenTree
         return (short) middle;
     }
 
-    public class TokenTreeIterator extends RangeIterator<Long, Token>
+    public class TokenTreeIterator extends RangeIterator<Long, IndexEntry>
     {
         private final Function<Long, DecoratedKey> keyFetcher;
         private final MappedBuffer file;
@@ -232,7 +232,7 @@ public class TokenTree
             this.keyFetcher = keyFetcher;
         }
 
-        protected Token computeNext()
+        protected IndexEntry computeNext()
         {
             maybeFirstIteration();
 
@@ -312,15 +312,15 @@ public class TokenTree
             return Long.compare(file.getLong(getTokenPosition(idx)), toToken);
         }
 
-        private Token getTokenAt(int idx)
+        private IndexEntry getTokenAt(int idx)
         {
-            return OnDiskToken.getTokenAt(file, idx, leafSize, keyFetcher);
+            return OnDiskIndexEntry.getTokenAt(file, idx, leafSize, keyFetcher);
         }
 
         private long getTokenPosition(int idx)
         {
             // skip 4 byte entry header to get position pointing directly at the entry's token
-            return OnDiskToken.getEntryPosition(idx, file) + (2 * SHORT_BYTES);
+            return OnDiskIndexEntry.getEntryPosition(idx, file) + (2 * SHORT_BYTES);
         }
 
         private void seekToNextLeaf()
@@ -347,12 +347,12 @@ public class TokenTree
         }
     }
 
-    public static class OnDiskToken extends Token
+    public static class OnDiskIndexEntry extends IndexEntry
     {
         private final Set<TokenInfo> info = new HashSet<>(2);
         private final Set<DecoratedKey> loadedKeys = new TreeSet<>(DecoratedKey.comparator);
 
-        public OnDiskToken(MappedBuffer buffer, long position, short leafSize, Function<Long, DecoratedKey> keyFetcher)
+        public OnDiskIndexEntry(MappedBuffer buffer, long position, short leafSize, Function<Long, DecoratedKey> keyFetcher)
         {
             super(buffer.getLong(position + (2 * SHORT_BYTES)));
             info.add(new TokenInfo(buffer, position, leafSize, keyFetcher));
@@ -360,16 +360,16 @@ public class TokenTree
 
         public void merge(CombinedValue<Long> other)
         {
-            if (!(other instanceof Token))
+            if (!(other instanceof IndexEntry))
                 return;
 
-            Token o = (Token) other;
+            IndexEntry o = (IndexEntry) other;
             if (token != o.token)
                 throw new IllegalArgumentException(String.format("%s != %s", token, o.token));
 
-            if (o instanceof OnDiskToken)
+            if (o instanceof OnDiskIndexEntry)
             {
-                info.addAll(((OnDiskToken) other).info);
+                info.addAll(((OnDiskIndexEntry) other).info);
             }
             else
             {
@@ -420,9 +420,9 @@ public class TokenTree
             return offsets;
         }
 
-        public static OnDiskToken getTokenAt(MappedBuffer buffer, int idx, short leafSize, Function<Long, DecoratedKey> keyFetcher)
+        public static OnDiskIndexEntry getTokenAt(MappedBuffer buffer, int idx, short leafSize, Function<Long, DecoratedKey> keyFetcher)
         {
-            return new OnDiskToken(buffer, getEntryPosition(idx, buffer), leafSize, keyFetcher);
+            return new OnDiskIndexEntry(buffer, getEntryPosition(idx, buffer), leafSize, keyFetcher);
         }
 
         private static long getEntryPosition(int idx, MappedBuffer file)

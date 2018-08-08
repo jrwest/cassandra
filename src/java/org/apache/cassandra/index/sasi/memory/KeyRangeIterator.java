@@ -24,7 +24,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.index.sasi.disk.Token;
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.index.sasi.utils.AbstractIterator;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
@@ -33,7 +33,7 @@ import com.carrotsearch.hppc.LongOpenHashSet;
 import com.carrotsearch.hppc.LongSet;
 import com.google.common.collect.PeekingIterator;
 
-public class KeyRangeIterator extends RangeIterator<Long, Token>
+public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
 {
     private final DKIterator iterator;
 
@@ -43,9 +43,9 @@ public class KeyRangeIterator extends RangeIterator<Long, Token>
         this.iterator = new DKIterator(keys.iterator());
     }
 
-    protected Token computeNext()
+    protected IndexEntry computeNext()
     {
-        return iterator.hasNext() ? new DKToken(iterator.next()) : endOfData();
+        return iterator.hasNext() ? new InMemoryIndexEntry(iterator.next()) : endOfData();
     }
 
     protected void performSkipTo(Long nextToken)
@@ -79,11 +79,11 @@ public class KeyRangeIterator extends RangeIterator<Long, Token>
         }
     }
 
-    private static class DKToken extends Token
+    private static class InMemoryIndexEntry extends IndexEntry
     {
         private final SortedSet<DecoratedKey> keys;
 
-        public DKToken(final DecoratedKey key)
+        public InMemoryIndexEntry(final DecoratedKey key)
         {
             super((long) key.getToken().getTokenValue());
 
@@ -104,15 +104,15 @@ public class KeyRangeIterator extends RangeIterator<Long, Token>
 
         public void merge(CombinedValue<Long> other)
         {
-            if (!(other instanceof Token))
+            if (!(other instanceof IndexEntry))
                 return;
 
-            Token o = (Token) other;
+            IndexEntry o = (IndexEntry) other;
             assert o.get().equals(token);
 
-            if (o instanceof DKToken)
+            if (o instanceof InMemoryIndexEntry)
             {
-                keys.addAll(((DKToken) o).keys);
+                keys.addAll(((InMemoryIndexEntry) o).keys);
             }
             else
             {

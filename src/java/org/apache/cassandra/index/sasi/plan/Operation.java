@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.ColumnMetadata.Kind;
 import org.apache.cassandra.cql3.Operator;
@@ -29,7 +30,6 @@ import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.Unfiltered;
 import org.apache.cassandra.index.sasi.conf.ColumnIndex;
 import org.apache.cassandra.index.sasi.analyzer.AbstractAnalyzer;
-import org.apache.cassandra.index.sasi.disk.Token;
 import org.apache.cassandra.index.sasi.plan.Expression.Op;
 import org.apache.cassandra.index.sasi.utils.RangeIntersectionIterator;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
@@ -41,7 +41,7 @@ import com.google.common.collect.*;
 import org.apache.cassandra.utils.FBUtilities;
 
 @SuppressWarnings("resource")
-public class Operation extends RangeIterator<Long, Token>
+public class Operation extends RangeIterator<Long, IndexEntry>
 {
     public enum OperationType
     {
@@ -67,14 +67,14 @@ public class Operation extends RangeIterator<Long, Token>
 
     protected final OperationType op;
     protected final ListMultimap<ColumnMetadata, Expression> expressions;
-    protected final RangeIterator<Long, Token> range;
+    protected final RangeIterator<Long, IndexEntry> range;
 
     protected Operation left, right;
 
     private Operation(OperationType operation,
                       QueryController controller,
                       ListMultimap<ColumnMetadata, Expression> expressions,
-                      RangeIterator<Long, Token> range,
+                      RangeIterator<Long, IndexEntry> range,
                       Operation left, Operation right)
     {
         super(range);
@@ -370,7 +370,7 @@ public class Operation extends RangeIterator<Long, Token>
         }
     }
 
-    protected Token computeNext()
+    protected IndexEntry computeNext()
     {
         return range != null && range.hasNext() ? range.next() : endOfData();
     }
@@ -431,7 +431,7 @@ public class Operation extends RangeIterator<Long, Token>
             if (!expressions.isEmpty())
             {
                 ListMultimap<ColumnMetadata, Expression> analyzedExpressions = analyzeGroup(controller, op, expressions);
-                RangeIterator.Builder<Long, Token> range = controller.getIndexes(op, analyzedExpressions.values());
+                RangeIterator.Builder<Long, IndexEntry> range = controller.getIndexes(op, analyzedExpressions.values());
 
                 Operation rightOp = null;
                 if (right != null)
@@ -459,7 +459,7 @@ public class Operation extends RangeIterator<Long, Token>
                     rightIndexes = rightOp != null && rightOp.range != null;
                 }
 
-                RangeIterator<Long, Token> join;
+                RangeIterator<Long, IndexEntry> join;
                 /**
                  * Operation should allow one of it's sub-trees to wrap no indexes, that is related  to the fact that we
                  * have to accept defined-but-not-indexed columns as well as key range as IndexExpressions.
@@ -490,9 +490,9 @@ public class Operation extends RangeIterator<Long, Token>
                     join = rightOp;
                 else if (leftIndexes)
                 {
-                    RangeIterator.Builder<Long, Token> builder = op == OperationType.OR
-                                                ? RangeUnionIterator.<Long, Token>builder()
-                                                : RangeIntersectionIterator.<Long, Token>builder();
+                    RangeIterator.Builder<Long, IndexEntry> builder = op == OperationType.OR
+                                                ? RangeUnionIterator.<Long, IndexEntry>builder()
+                                                : RangeIntersectionIterator.<Long, IndexEntry>builder();
 
                     join = builder.add(leftOp).add(rightOp).build();
                 }

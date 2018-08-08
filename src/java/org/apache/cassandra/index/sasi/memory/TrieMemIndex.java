@@ -23,10 +23,10 @@ import java.util.List;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.index.sasi.conf.ColumnIndex;
 import org.apache.cassandra.index.sasi.disk.OnDiskIndexBuilder;
-import org.apache.cassandra.index.sasi.disk.Token;
 import org.apache.cassandra.index.sasi.plan.Expression;
 import org.apache.cassandra.index.sasi.plan.Expression.Op;
 import org.apache.cassandra.index.sasi.analyzer.AbstractAnalyzer;
@@ -97,7 +97,7 @@ public class TrieMemIndex extends MemIndex
         return size;
     }
 
-    public RangeIterator<Long, Token> search(Expression expression)
+    public RangeIterator<Long, IndexEntry> search(Expression expression)
     {
         return index.search(expression);
     }
@@ -137,13 +137,13 @@ public class TrieMemIndex extends MemIndex
             return overhead;
         }
 
-        public RangeIterator<Long, Token> search(Expression expression)
+        public RangeIterator<Long, IndexEntry> search(Expression expression)
         {
             ByteBuffer prefix = expression.lower == null ? null : expression.lower.value;
 
             Iterable<ConcurrentSkipListSet<DecoratedKey>> search = search(expression.getOp(), definition.cellValueType().getString(prefix));
 
-            RangeUnionIterator.Builder<Long, Token> builder = RangeUnionIterator.builder();
+            RangeUnionIterator.Builder<Long, IndexEntry> builder = RangeUnionIterator.builder();
             for (ConcurrentSkipListSet<DecoratedKey> keys : search)
             {
                 if (!keys.isEmpty())

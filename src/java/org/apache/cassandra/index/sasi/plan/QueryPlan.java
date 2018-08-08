@@ -23,7 +23,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.dht.AbstractBounds;
-import org.apache.cassandra.index.sasi.disk.Token;
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.index.sasi.plan.Operation.OperationType;
 import org.apache.cassandra.exceptions.RequestTimeoutException;
 import org.apache.cassandra.io.util.FileUtils;
@@ -99,8 +99,8 @@ public class QueryPlan
                     if (!operationTree.hasNext())
                          return endOfData();
 
-                    Token token = operationTree.next();
-                    currentKeys = token.iterator();
+                    IndexEntry entry = operationTree.next();
+                    currentKeys = entry.iterator();
                 }
 
                 while (currentKeys.hasNext())

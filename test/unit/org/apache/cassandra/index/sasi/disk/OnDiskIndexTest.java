@@ -164,7 +164,7 @@ public class OnDiskIndexTest
         {
             ByteBuffer number = sortedNumbers.get(idx++);
             Assert.assertEquals(number, term.getTerm());
-            Assert.assertEquals(convert(data.get(number)), convert(term.getTokens()));
+            Assert.assertEquals(convert(data.get(number)), convert(term.getEntries()));
         }
 
         // test partial iteration (descending)
@@ -176,7 +176,7 @@ public class OnDiskIndexTest
             ByteBuffer number = sortedNumbers.get(idx++);
 
             Assert.assertEquals(number, term.getTerm());
-            Assert.assertEquals(convert(data.get(number)), convert(term.getTokens()));
+            Assert.assertEquals(convert(data.get(number)), convert(term.getEntries()));
         }
 
         idx = 3; // start from the 3rd element exclusive
@@ -187,7 +187,7 @@ public class OnDiskIndexTest
             ByteBuffer number = sortedNumbers.get(idx++);
 
             Assert.assertEquals(number, term.getTerm());
-            Assert.assertEquals(convert(data.get(number)), convert(term.getTokens()));
+            Assert.assertEquals(convert(data.get(number)), convert(term.getEntries()));
         }
 
         // test partial iteration (ascending)
@@ -199,7 +199,7 @@ public class OnDiskIndexTest
             ByteBuffer number = sortedNumbers.get(idx--);
 
             Assert.assertEquals(number, term.getTerm());
-            Assert.assertEquals(convert(data.get(number)), convert(term.getTokens()));
+            Assert.assertEquals(convert(data.get(number)), convert(term.getEntries()));
         }
 
         idx = 6; // start from the 6rd element exclusive
@@ -210,7 +210,7 @@ public class OnDiskIndexTest
             ByteBuffer number = sortedNumbers.get(idx--);
 
             Assert.assertEquals(number, term.getTerm());
-            Assert.assertEquals(convert(data.get(number)), convert(term.getTokens()));
+            Assert.assertEquals(convert(data.get(number)), convert(term.getEntries()));
         }
 
         onDisk.close();
@@ -333,7 +333,7 @@ public class OnDiskIndexTest
             boolean upperInclusive = random.nextBoolean();
 
             long limit = random.nextLong(step, start + numIterations);
-            RangeIterator<Long, Token> rows = onDisk.search(expressionFor(step, lowerInclusive, limit, upperInclusive));
+            RangeIterator<Long, IndexEntry> rows = onDisk.search(expressionFor(step, lowerInclusive, limit, upperInclusive));
 
             long lowerKey = step - start;
             long upperKey = lowerKey + (limit - step);
@@ -352,7 +352,7 @@ public class OnDiskIndexTest
         }
 
         // let's also explicitly test whole range search
-        RangeIterator<Long, Token> rows = onDisk.search(expressionFor(start, true, start + numIterations, true));
+        RangeIterator<Long, IndexEntry> rows = onDisk.search(expressionFor(start, true, start + numIterations, true));
 
         Set<DecoratedKey> actual = convert(rows);
         Assert.assertEquals(numIterations, actual.size());
@@ -577,17 +577,17 @@ public class OnDiskIndexTest
 
         OnDiskIndex onDisk = new OnDiskIndex(index, Int32Type.instance, new KeyConverter());
         OnDiskIndex.OnDiskSuperBlock superBlock = onDisk.dataLevel.getSuperBlock(0);
-        Iterator<Token> iter = superBlock.iterator();
+        Iterator<IndexEntry> iter = superBlock.iterator();
 
         Long lastToken = null;
         while (iter.hasNext())
         {
-            Token token = iter.next();
+            IndexEntry entry = iter.next();
 
             if (lastToken != null)
-                Assert.assertTrue(lastToken.compareTo(token.get()) < 0);
+                Assert.assertTrue(lastToken.compareTo(entry.get()) < 0);
 
-            lastToken = token.get();
+            lastToken = entry.get();
         }
     }
 
@@ -749,7 +749,7 @@ public class OnDiskIndexTest
 
     private void testSearchRangeWithSuperBlocks(OnDiskIndex onDiskIndex, long start, long end)
     {
-        RangeIterator<Long, Token> tokens = onDiskIndex.search(expressionFor(start, true, end, false));
+        RangeIterator<Long, IndexEntry> tokens = onDiskIndex.search(expressionFor(start, true, end, false));
 
         // no results should be produced only if range is empty
         if (tokens == null)
@@ -762,8 +762,8 @@ public class OnDiskIndexTest
         Long lastToken = null;
         while (tokens.hasNext())
         {
-            Token token = tokens.next();
-            Iterator<DecoratedKey> keys = token.iterator();
+            IndexEntry entry = tokens.next();
+            Iterator<DecoratedKey> keys = entry.iterator();
 
             // each of the values should have exactly a single key
             Assert.assertTrue(keys.hasNext());
@@ -772,9 +772,9 @@ public class OnDiskIndexTest
 
             // and it's last should always smaller than current
             if (lastToken != null)
-                Assert.assertTrue("last should be less than current", lastToken.compareTo(token.get()) < 0);
+                Assert.assertTrue("last should be less than current", lastToken.compareTo(entry.get()) < 0);
 
-            lastToken = token.get();
+            lastToken = entry.get();
             keyCount++;
         }
 
@@ -824,7 +824,7 @@ public class OnDiskIndexTest
         return result;
     }
 
-    private static Set<DecoratedKey> convert(RangeIterator<Long, Token> results)
+    private static Set<DecoratedKey> convert(RangeIterator<Long, IndexEntry> results)
     {
         if (results == null)
             return Collections.emptySet();

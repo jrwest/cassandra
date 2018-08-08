@@ -146,7 +146,7 @@ public class PerSSTableIndexWriterTest extends SchemaLoader
         int count = 0;
         for (OnDiskIndex.DataTerm term : index)
         {
-            RangeIterator<Long, Token> tokens = term.getTokens();
+            RangeIterator<Long, IndexEntry> tokens = term.getEntries();
 
             while (tokens.hasNext())
             {

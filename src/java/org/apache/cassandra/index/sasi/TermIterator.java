@@ -26,8 +26,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.index.sasi.disk.OnDiskIndexBuilder;
-import org.apache.cassandra.index.sasi.disk.Token;
 import org.apache.cassandra.index.sasi.plan.Expression;
 import org.apache.cassandra.index.sasi.utils.RangeUnionIterator;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
@@ -39,7 +39,7 @@ import com.google.common.util.concurrent.Uninterruptibles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class TermIterator extends RangeIterator<Long, Token>
+public class TermIterator extends RangeIterator<Long, IndexEntry>
 {
     private static final Logger logger = LoggerFactory.getLogger(TermIterator.class);
 
@@ -68,11 +68,11 @@ public class TermIterator extends RangeIterator<Long, Token>
 
     private final Expression expression;
 
-    private final RangeIterator<Long, Token> union;
+    private final RangeIterator<Long, IndexEntry> union;
     private final Set<SSTableIndex> referencedIndexes;
 
     private TermIterator(Expression e,
-                         RangeIterator<Long, Token> union,
+                         RangeIterator<Long, IndexEntry> union,
                          Set<SSTableIndex> referencedIndexes)
     {
         super(union.getMinimum(), union.getMaximum(), union.getCount());
@@ -85,10 +85,10 @@ public class TermIterator extends RangeIterator<Long, Token>
     @SuppressWarnings("resource")
     public static TermIterator build(final Expression e, Set<SSTableIndex> perSSTableIndexes)
     {
-        final List<RangeIterator<Long, Token>> tokens = new CopyOnWriteArrayList<>();
+        final List<RangeIterator<Long, IndexEntry>> tokens = new CopyOnWriteArrayList<>();
         final AtomicLong tokenCount = new AtomicLong(0);
 
-        RangeIterator<Long, Token> memtableIterator = e.index.searchMemtable(e);
+        RangeIterator<Long, IndexEntry> memtableIterator = e.index.searchMemtable(e);
         if (memtableIterator != null)
         {
             tokens.add(memtableIterator);
@@ -127,7 +127,7 @@ public class TermIterator extends RangeIterator<Long, Token>
                     {
                         e.checkpoint();
 
-                        RangeIterator<Long, Token> keyIterator = index.search(e);
+                        RangeIterator<Long, IndexEntry> keyIterator = index.search(e);
                         if (keyIterator == null)
                         {
                             releaseIndex(referencedIndexes, index);
@@ -156,7 +156,7 @@ public class TermIterator extends RangeIterator<Long, Token>
             // checkpoint right away after all indexes complete search because we might have crossed the quota
             e.checkpoint();
 
-            RangeIterator<Long, Token> ranges = RangeUnionIterator.build(tokens);
+            RangeIterator<Long, IndexEntry> ranges = RangeUnionIterator.build(tokens);
             return new TermIterator(e, ranges, referencedIndexes);
         }
         catch (Throwable ex)
@@ -169,7 +169,7 @@ public class TermIterator extends RangeIterator<Long, Token>
         }
     }
 
-    protected Token computeNext()
+    protected IndexEntry computeNext()
     {
         try
         {

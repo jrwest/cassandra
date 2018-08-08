@@ -160,11 +160,11 @@ public class TokenTreeTest
         final RandomAccessReader reader = RandomAccessReader.open(treeFile);
         final TokenTree tokenTree = new TokenTree(new MappedBuffer(reader));
 
-        final Iterator<Token> tokenIterator = tokenTree.iterator(KEY_CONVERTER);
+        final Iterator<IndexEntry> tokenIterator = tokenTree.iterator(KEY_CONVERTER);
         final Iterator<Map.Entry<Long, LongSet>> listIterator = tokenMap.entrySet().iterator();
         while (tokenIterator.hasNext() && listIterator.hasNext())
         {
-            Token treeNext = tokenIterator.next();
+            IndexEntry treeNext = tokenIterator.next();
             Map.Entry<Long, LongSet> listNext = listIterator.next();
 
             Assert.assertEquals(listNext.getKey(), treeNext.get());
@@ -198,7 +198,7 @@ public class TokenTreeTest
 
         for (long i = 0; i <= tokMax; i++)
         {
-            TokenTree.OnDiskToken result = tokenTree.get(i, KEY_CONVERTER);
+            TokenTree.OnDiskIndexEntry result = tokenTree.get(i, KEY_CONVERTER);
             Assert.assertNotNull("failed to find object for token " + i, result);
 
             LongSet found = result.getOffsets();
@@ -239,14 +239,14 @@ public class TokenTreeTest
         final RandomAccessReader reader = RandomAccessReader.open(treeFile);
         final TokenTree tokenTree = new TokenTree(new MappedBuffer(reader));
 
-        final RangeIterator<Long, Token> treeIterator = tokenTree.iterator(KEY_CONVERTER);
-        final RangeIterator<Long, TokenWithOffsets> listIterator = new EntrySetSkippableIterator(tokens);
+        final RangeIterator<Long, IndexEntry> treeIterator = tokenTree.iterator(KEY_CONVERTER);
+        final RangeIterator<Long, IndexEntryWithOffsets> listIterator = new EntrySetSkippableIterator(tokens);
 
         long lastToken = 0L;
         while (treeIterator.hasNext() && lastToken < 12)
         {
-            Token treeNext = treeIterator.next();
-            TokenWithOffsets listNext = listIterator.next();
+            IndexEntry treeNext = treeIterator.next();
+            IndexEntryWithOffsets listNext = listIterator.next();
 
             Assert.assertEquals(listNext.token, (lastToken = treeNext.get()));
             Assert.assertEquals(convert(listNext.offsets), convert(treeNext));
@@ -257,8 +257,8 @@ public class TokenTreeTest
 
         while (treeIterator.hasNext() && listIterator.hasNext())
         {
-            Token treeNext = treeIterator.next();
-            TokenWithOffsets listNext = listIterator.next();
+            IndexEntry treeNext = treeIterator.next();
+            IndexEntryWithOffsets listNext = listIterator.next();
 
             Assert.assertEquals(listNext.token, (long) treeNext.get());
             Assert.assertEquals(convert(listNext.offsets), convert(treeNext));
@@ -296,24 +296,24 @@ public class TokenTreeTest
         }
 
         final RandomAccessReader reader = RandomAccessReader.open(treeFile);
-        final RangeIterator<Long, Token> tokenTree = new TokenTree(new MappedBuffer(reader)).iterator(KEY_CONVERTER);
+        final RangeIterator<Long, IndexEntry> tokenTree = new TokenTree(new MappedBuffer(reader)).iterator(KEY_CONVERTER);
 
         tokenTree.skipTo(tokens.lastKey() + 10);
     }
 
     @Test
-    public void testTokenMergeDyanmic() throws Exception
+    public void testIndexEntryMergeDyanmic() throws Exception
     {
-        testTokenMerge(false);
+        testIndexEntryMerge(false);
     }
 
     @Test
-    public void testTokenMergeStatic() throws Exception
+    public void testIndexEntryMergeStatic() throws Exception
     {
-        testTokenMerge(true);
+        testIndexEntryMerge(true);
     }
 
-    public void testTokenMerge(boolean isStatic) throws Exception
+    public void testIndexEntryMerge(boolean isStatic) throws Exception
     {
         final long min = 0, max = 1000;
 
@@ -321,26 +321,26 @@ public class TokenTreeTest
         TokenTree treeA = generateTree(min, max, isStatic);
         TokenTree treeB = generateTree(min, max, isStatic);
 
-        RangeIterator<Long, Token> a = treeA.iterator(new KeyConverter());
-        RangeIterator<Long, Token> b = treeB.iterator(new KeyConverter());
+        RangeIterator<Long, IndexEntry> a = treeA.iterator(new KeyConverter());
+        RangeIterator<Long, IndexEntry> b = treeB.iterator(new KeyConverter());
 
         long count = min;
         while (a.hasNext() && b.hasNext())
         {
-            final Token tokenA = a.next();
-            final Token tokenB = b.next();
+            final IndexEntry entryA = a.next();
+            final IndexEntry entryB = b.next();
 
-            // merging of two OnDiskToken
-            tokenA.merge(tokenB);
-            // merging with RAM Token with different offset
-            tokenA.merge(new TokenWithOffsets(tokenA.get(), convert(count + 1)));
+            // merging of two OnDiskIndexEntry
+            entryA.merge(entryB);
+            // merging with RAM IndexEntry with different offset
+            entryA.merge(new IndexEntryWithOffsets(entryA.get(), convert(count + 1)));
             // and RAM token with the same offset
-            tokenA.merge(new TokenWithOffsets(tokenA.get(), convert(count)));
+            entryA.merge(new IndexEntryWithOffsets(entryA.get(), convert(count)));
 
             // should fail when trying to merge different tokens
             try
             {
-                tokenA.merge(new TokenWithOffsets(tokenA.get() + 1, convert(count)));
+                entryA.merge(new IndexEntryWithOffsets(entryA.get() + 1, convert(count)));
                 Assert.fail();
             }
             catch (IllegalArgumentException e)
@@ -349,7 +349,7 @@ public class TokenTreeTest
             }
 
             final Set<Long> offsets = new TreeSet<>();
-            for (DecoratedKey key : tokenA)
+            for (DecoratedKey key : entryA)
                  offsets.add(LongType.instance.compose(key.getKey()));
 
             Set<Long> expected = new TreeSet<>();
@@ -391,9 +391,9 @@ public class TokenTreeTest
 
         TokenTreeBuilder tokensC = new StaticTokenTreeBuilder(new CombinedTerm(null, null)
         {
-            public RangeIterator<Long, Token> getTokenIterator()
+            public RangeIterator<Long, IndexEntry> getEntryIterator()
             {
-                RangeIterator.Builder<Long, Token> union = RangeUnionIterator.builder();
+                RangeIterator.Builder<Long, IndexEntry> union = RangeUnionIterator.builder();
                 union.add(a.iterator(new KeyConverter()));
                 union.add(b.iterator(new KeyConverter()));
 
@@ -404,11 +404,11 @@ public class TokenTreeTest
         TokenTree c = buildTree(tokensC);
         Assert.assertEquals(tokensMap.size(), c.getCount());
 
-        Iterator<Token> tokenIterator = c.iterator(KEY_CONVERTER);
+        Iterator<IndexEntry> tokenIterator = c.iterator(KEY_CONVERTER);
         Iterator<Map.Entry<Long, LongSet>> listIterator = tokensMap.entrySet().iterator();
         while (tokenIterator.hasNext() && listIterator.hasNext())
         {
-            Token treeNext = tokenIterator.next();
+            IndexEntry treeNext = tokenIterator.next();
             Map.Entry<Long, LongSet> listNext = listIterator.next();
 
             Assert.assertEquals(listNext.getKey(), treeNext.get());
@@ -417,7 +417,7 @@ public class TokenTreeTest
 
         for (Map.Entry<Long, LongSet> entry : tokensMap.entrySet())
         {
-            TokenTree.OnDiskToken result = c.get(entry.getKey(), KEY_CONVERTER);
+            TokenTree.OnDiskIndexEntry result = c.get(entry.getKey(), KEY_CONVERTER);
             Assert.assertNotNull("failed to find object for token " + entry.getKey(), result);
 
             LongSet found = result.getOffsets();
@@ -443,7 +443,7 @@ public class TokenTreeTest
         return new TokenTree(new MappedBuffer(reader));
     }
 
-    private static class EntrySetSkippableIterator extends RangeIterator<Long, TokenWithOffsets>
+    private static class EntrySetSkippableIterator extends RangeIterator<Long, IndexEntryWithOffsets>
     {
         private final PeekingIterator<Map.Entry<Long, LongSet>> elements;
 
@@ -454,13 +454,13 @@ public class TokenTreeTest
         }
 
         @Override
-        public TokenWithOffsets computeNext()
+        public IndexEntryWithOffsets computeNext()
         {
             if (!elements.hasNext())
                 return endOfData();
 
             Map.Entry<Long, LongSet> next = elements.next();
-            return new TokenWithOffsets(next.getKey(), next.getValue());
+            return new IndexEntryWithOffsets(next.getKey(), next.getValue());
         }
 
         @Override
@@ -494,13 +494,13 @@ public class TokenTreeTest
             this.tokens = tokens;
         }
 
-        public RangeIterator<Long, Token> getTokenIterator()
+        public RangeIterator<Long, IndexEntry> getEntryIterator()
         {
             return new TokenMapIterator(tokens);
         }
     }
 
-    public static class TokenMapIterator extends RangeIterator<Long, Token>
+    public static class TokenMapIterator extends RangeIterator<Long, IndexEntry>
     {
         public final Iterator<Map.Entry<Long, LongSet>> iterator;
 
@@ -510,13 +510,13 @@ public class TokenTreeTest
             iterator = tokens.entrySet().iterator();
         }
 
-        public Token computeNext()
+        public IndexEntry computeNext()
         {
             if (!iterator.hasNext())
                 return endOfData();
 
             Map.Entry<Long, LongSet> entry = iterator.next();
-            return new TokenWithOffsets(entry.getKey(), entry.getValue());
+            return new IndexEntryWithOffsets(entry.getKey(), entry.getValue());
         }
 
         public void close() throws IOException
@@ -530,11 +530,11 @@ public class TokenTreeTest
         }
     }
 
-    public static class TokenWithOffsets extends Token
+    public static class IndexEntryWithOffsets extends IndexEntry
     {
         private final LongSet offsets;
 
-        public TokenWithOffsets(long token, final LongSet offsets)
+        public IndexEntryWithOffsets(long token, final LongSet offsets)
         {
             super(token);
             this.offsets = offsets;
@@ -559,10 +559,10 @@ public class TokenTreeTest
         @Override
         public boolean equals(Object other)
         {
-            if (!(other instanceof TokenWithOffsets))
+            if (!(other instanceof IndexEntryWithOffsets))
                 return false;
 
-            TokenWithOffsets o = (TokenWithOffsets) other;
+            IndexEntryWithOffsets o = (IndexEntryWithOffsets) other;
             return token == o.token && offsets.equals(o.offsets);
         }
 
@@ -598,7 +598,7 @@ public class TokenTreeTest
         return keys;
     }
 
-    private static Set<DecoratedKey> convert(Token results)
+    private static Set<DecoratedKey> convert(IndexEntry results)
     {
         Set<DecoratedKey> keys = new HashSet<>();
         for (DecoratedKey key : results)

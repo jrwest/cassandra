@@ -26,11 +26,11 @@ import java.util.List;
 import com.carrotsearch.hppc.LongOpenHashSet;
 import com.carrotsearch.hppc.LongSet;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.index.sasi.disk.Token;
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 
-public class LongIterator extends RangeIterator<Long, Token>
+public class LongIterator extends RangeIterator<Long, IndexEntry>
 {
-    private final List<LongToken> tokens;
+    private final List<LongIndexEntry> tokens;
     private int currentIdx = 0;
 
     public LongIterator(long[] tokens)
@@ -38,11 +38,11 @@ public class LongIterator extends RangeIterator<Long, Token>
         super(tokens.length == 0 ? null : tokens[0], tokens.length == 0 ? null : tokens[tokens.length - 1], tokens.length);
         this.tokens = new ArrayList<>(tokens.length);
         for (long token : tokens)
-            this.tokens.add(new LongToken(token));
+            this.tokens.add(new LongIndexEntry(token));
     }
 
     @Override
-    protected Token computeNext()
+    protected IndexEntry computeNext()
     {
         if (currentIdx >= tokens.size())
             return endOfData();
@@ -55,7 +55,7 @@ public class LongIterator extends RangeIterator<Long, Token>
     {
         for (int i = currentIdx == 0 ? 0 : currentIdx - 1; i < tokens.size(); i++)
         {
-            LongToken token = tokens.get(i);
+            LongIndexEntry token = tokens.get(i);
             if (token.get().compareTo(nextToken) >= 0)
             {
                 currentIdx = i;
@@ -68,9 +68,9 @@ public class LongIterator extends RangeIterator<Long, Token>
     public void close() throws IOException
     {}
 
-    public static class LongToken extends Token
+    public static class LongIndexEntry extends IndexEntry
     {
-        public LongToken(long token)
+        public LongIndexEntry(long token)
         {
             super(token);
         }
@@ -94,7 +94,7 @@ public class LongIterator extends RangeIterator<Long, Token>
         }
     }
 
-    public static List<Long> convert(RangeIterator<Long, Token> tokens)
+    public static List<Long> convert(RangeIterator<Long, IndexEntry> tokens)
     {
         List<Long> results = new ArrayList<>();
         while (tokens.hasNext())

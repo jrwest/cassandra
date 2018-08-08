@@ -24,11 +24,11 @@ import org.apache.cassandra.index.sasi.utils.CombinedValue;
 
 import com.carrotsearch.hppc.LongSet;
 
-public abstract class Token implements CombinedValue<Long>, Iterable<DecoratedKey>
+public abstract class IndexEntry implements CombinedValue<Long>, Iterable<DecoratedKey>
 {
     protected final long token;
 
-    public Token(long token)
+    public IndexEntry(long token)
     {
         this.token = token;
     }
@@ -42,6 +42,6 @@ public abstract class Token implements CombinedValue<Long>, Iterable<DecoratedKe
 
     public int compareTo(CombinedValue<Long> o)
     {
-        return Longs.compare(token, ((Token) o).token);
+        return Longs.compare(token, ((IndexEntry) o).token);
     }
 }

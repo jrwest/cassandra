@@ -40,7 +40,7 @@ import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.index.sasi.analyzer.AbstractAnalyzer;
 import org.apache.cassandra.index.sasi.conf.view.View;
 import org.apache.cassandra.index.sasi.disk.OnDiskIndexBuilder;
-import org.apache.cassandra.index.sasi.disk.Token;
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.index.sasi.memory.IndexMemtable;
 import org.apache.cassandra.index.sasi.plan.Expression;
 import org.apache.cassandra.index.sasi.plan.Expression.Op;
@@ -132,9 +132,9 @@ public class ColumnIndex
         return pendingFlush.values();
     }
 
-    public RangeIterator<Long, Token> searchMemtable(Expression e)
+    public RangeIterator<Long, IndexEntry> searchMemtable(Expression e)
     {
-        RangeIterator.Builder<Long, Token> builder = new RangeUnionIterator.Builder<>();
+        RangeIterator.Builder<Long, IndexEntry> builder = new RangeUnionIterator.Builder<>();
         builder.add(getCurrentMemtable().search(e));
         for (IndexMemtable memtable : getPendingMemtables())
             builder.add(memtable.search(e));

@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentSkipListSet;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.conf.ColumnIndex;
-import org.apache.cassandra.index.sasi.disk.Token;
+import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.index.sasi.plan.Expression;
 import org.apache.cassandra.index.sasi.utils.RangeUnionIterator;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
@@ -63,7 +63,7 @@ public class SkipListMemIndex extends MemIndex
         return overhead;
     }
 
-    public RangeIterator<Long, Token> search(Expression expression)
+    public RangeIterator<Long, IndexEntry> search(Expression expression)
     {
         ByteBuffer min = expression.lower == null ? null : expression.lower.value;
         ByteBuffer max = expression.upper == null ? null : expression.upper.value;
@@ -87,7 +87,7 @@ public class SkipListMemIndex extends MemIndex
             search = index.tailMap(min, expression.lower.inclusive);
         }
 
-        RangeUnionIterator.Builder<Long, Token> builder = RangeUnionIterator.builder();
+        RangeUnionIterator.Builder<Long, IndexEntry> builder = RangeUnionIterator.builder();
         search.values().stream()
                        .filter(keys -> !keys.isEmpty())
                        .forEach(keys -> builder.add(new KeyRangeIterator(keys)));

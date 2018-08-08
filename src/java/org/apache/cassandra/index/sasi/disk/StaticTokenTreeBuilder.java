@@ -37,7 +37,7 @@ import com.google.common.collect.Iterators;
  * by {@link PerSSTableIndexWriter#complete()}.
  *
  * This class uses the RangeIterator, now provided by
- * {@link CombinedTerm#getTokenIterator()}, to iterate the data twice.
+ * {@link CombinedTerm#getEntryIterator()}, to iterate the data twice.
  * The first iteration builds the tree with leaves that contain only enough
  * information to build the upper layers -- these leaves do not store more
  * than their minimum and maximum tokens plus their total size, which makes them
@@ -85,7 +85,7 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
 
     public Iterator<Pair<Long, LongSet>> iterator()
     {
-        Iterator<Token> iterator = combinedTerm.getTokenIterator();
+        Iterator<IndexEntry> iterator = combinedTerm.getEntryIterator();
         return new AbstractIterator<Pair<Long, LongSet>>()
         {
             protected Pair<Long, LongSet> computeNext()
@@ -93,8 +93,8 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
                 if (!iterator.hasNext())
                     return endOfData();
 
-                Token token = iterator.next();
-                return Pair.create(token.get(), token.getOffsets());
+                IndexEntry entry = iterator.next();
+                return Pair.create(entry.get(), entry.getOffsets());
             }
         };
     }
@@ -114,13 +114,13 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         if (root.isLeaf())
             return;
 
-        RangeIterator<Long, Token> tokens = combinedTerm.getTokenIterator();
+        RangeIterator<Long, IndexEntry> entries = combinedTerm.getEntryIterator();
         ByteBuffer blockBuffer = ByteBuffer.allocate(BLOCK_BYTES);
         Iterator<Node> leafIterator = leftmostLeaf.levelIterator();
         while (leafIterator.hasNext())
         {
             Leaf leaf = (Leaf) leafIterator.next();
-            Leaf writeableLeaf = new StaticLeaf(Iterators.limit(tokens, leaf.tokenCount()), leaf);
+            Leaf writeableLeaf = new StaticLeaf(Iterators.limit(entries, leaf.tokenCount()), leaf);
             writeableLeaf.serialize(-1, blockBuffer);
             flushBuffer(blockBuffer, out, true);
         }
@@ -129,11 +129,11 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
 
     protected void constructTree()
     {
-        RangeIterator<Long, Token> tokens = combinedTerm.getTokenIterator();
+        RangeIterator<Long, IndexEntry> entries = combinedTerm.getEntryIterator();
 
         tokenCount = 0;
-        treeMinToken = tokens.getMinimum();
-        treeMaxToken = tokens.getMaximum();
+        treeMinToken = entries.getMinimum();
+        treeMaxToken = entries.getMaximum();
         numBlocks = 1;
 
         root = new InteriorNode();
@@ -141,9 +141,9 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         Leaf lastLeaf = null;
         Long lastToken, firstToken = null;
         int leafSize = 0;
-        while (tokens.hasNext())
+        while (entries.hasNext())
         {
-            Long token = tokens.next().get();
+            Long token = entries.next().get();
             if (firstToken == null)
                 firstToken = token;
 
@@ -174,7 +174,7 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         if (root.tokenCount() == 0)
         {
             numBlocks = 1;
-            root = new StaticLeaf(combinedTerm.getTokenIterator(), treeMinToken, treeMaxToken, tokenCount, true);
+            root = new StaticLeaf(combinedTerm.getEntryIterator(), treeMinToken, treeMaxToken, tokenCount, true);
         }
     }
 
@@ -208,21 +208,21 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
     // This denotes the leaf which has been filled with data and is ready to be serialized
     private class StaticLeaf extends Leaf
     {
-        private final Iterator<Token> tokens;
+        private final Iterator<IndexEntry> entries;
         private final int count;
         private final boolean isLast;
 
-        public StaticLeaf(Iterator<Token> tokens, Leaf leaf)
+        public StaticLeaf(Iterator<IndexEntry> entries, Leaf leaf)
         {
-            this(tokens, leaf.smallestToken(), leaf.largestToken(), leaf.tokenCount(), leaf.isLastLeaf());
+            this(entries, leaf.smallestToken(), leaf.largestToken(), leaf.tokenCount(), leaf.isLastLeaf());
         }
 
-        public StaticLeaf(Iterator<Token> tokens, Long min, Long max, long count, boolean isLastLeaf)
+        public StaticLeaf(Iterator<IndexEntry> entries, Long min, Long max, long count, boolean isLastLeaf)
         {
             super(min, max);
 
             this.count = (int) count; // downcast is safe since leaf size is always < Integer.MAX_VALUE
-            this.tokens = tokens;
+            this.entries = entries;
             this.isLast = isLastLeaf;
         }
 
@@ -238,9 +238,9 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
 
         public void serializeData(ByteBuffer buf)
         {
-            while (tokens.hasNext())
+            while (entries.hasNext())
             {
-                Token entry = tokens.next();
+                IndexEntry entry = entries.next();
                 createEntry(entry.get(), entry.getOffsets()).serialize(buf);
             }
         }
