@@ -103,15 +103,10 @@ public class TokenTree
 
     private boolean validateMagic()
     {
-        switch (descriptor.version.toString())
-        {
-            case Descriptor.VERSION_AA:
-                return true;
-            case Descriptor.VERSION_AB:
-                return TokenTreeBuilder.AB_MAGIC == file.getShort();
-            default:
-                return false;
-        }
+        if (descriptor.version.hasMagic())
+            return descriptor.version.validateMagic(file.getShort());
+
+        return true;
     }
 
     // finds leaf that *could* contain token

@@ -22,18 +22,40 @@ package org.apache.cassandra.index.sasi.disk;
  */
 public class Descriptor
 {
-    public static final String VERSION_AA = "aa";
-    public static final String VERSION_AB = "ab";
-    public static final String CURRENT_VERSION = VERSION_AB;
+    public static final Version CURRENT_VERSION = Version.AA;
     public static final Descriptor CURRENT = new Descriptor(CURRENT_VERSION);
 
-    public static class Version
+    public enum Version
     {
-        public final String version;
+        AA("aa", (short) 0),
+        AB("ab", (short) 0x5A51);
 
-        public Version(String version)
+        final String version;
+        final short magic;
+
+        public static Version fromString(String version)
+        {
+            for (Version v : Version.values())
+                if (version.equalsIgnoreCase(v.version))
+                    return v;
+
+            throw new IllegalArgumentException("Unknown version: " + version);
+        }
+
+        Version(String version, short magic)
         {
             this.version = version;
+            this.magic = magic;
+        }
+
+        public boolean hasMagic()
+        {
+            return magic != 0;
+        }
+
+        public boolean validateMagic(short readMagic)
+        {
+            return magic == 0 || magic == readMagic;
         }
 
         public String toString()
@@ -44,8 +66,8 @@ public class Descriptor
 
     public final Version version;
 
-    public Descriptor(String v)
+    public Descriptor(Version v)
     {
-        this.version = new Version(v);
+        this.version = v;
     }
 }

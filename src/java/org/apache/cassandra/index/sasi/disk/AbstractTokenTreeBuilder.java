@@ -216,16 +216,8 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
             protected void writeMagic(ByteBuffer buf)
             {
-                switch (Descriptor.CURRENT_VERSION)
-                {
-                    case Descriptor.VERSION_AB:
-                        buf.putShort(AB_MAGIC);
-                        break;
-
-                    default:
-                        break;
-                }
-
+                if (Descriptor.CURRENT.version.hasMagic())
+                    buf.putShort(Descriptor.CURRENT.version.magic);
             }
         }
 

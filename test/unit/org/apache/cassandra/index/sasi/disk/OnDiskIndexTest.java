@@ -544,7 +544,7 @@ public class OnDiskIndexTest
         index2.deleteOnExit();
 
         builder1.finish(index1);
-        builder2.finish(new Descriptor(Descriptor.VERSION_AA), index2);
+        builder2.finish(new Descriptor(Descriptor.Version.AA), index2);
 
         OnDiskIndex onDisk1 = new OnDiskIndex(index1, Int32Type.instance, new KeyConverter());
         OnDiskIndex onDisk2 = new OnDiskIndex(index2, Int32Type.instance, new KeyConverter());
@@ -554,8 +554,8 @@ public class OnDiskIndexTest
         Assert.assertEquals(Collections.singleton(data.get(number).left), convert(onDisk1.search(expressionFor(Operator.EQ, Int32Type.instance, number))));
         Assert.assertEquals(Collections.singleton(data.get(number).left), convert(onDisk2.search(expressionFor(Operator.EQ, Int32Type.instance, number))));
 
-        Assert.assertEquals(onDisk1.descriptor.version.version, Descriptor.CURRENT_VERSION);
-        Assert.assertEquals(onDisk2.descriptor.version.version, Descriptor.VERSION_AA);
+        Assert.assertEquals(onDisk1.descriptor.version, Descriptor.CURRENT_VERSION);
+        Assert.assertEquals(onDisk2.descriptor.version, Descriptor.Version.AA);
     }
 
     @Test

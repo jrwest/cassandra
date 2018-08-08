@@ -128,7 +128,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
         {
             backingFile = new RandomAccessFile(index, "r");
 
-            descriptor = new Descriptor(backingFile.readUTF());
+            descriptor = new Descriptor(Descriptor.Version.fromString(backingFile.readUTF()));
 
             termSize = OnDiskIndexBuilder.TermSize.of(backingFile.readShort());
 
