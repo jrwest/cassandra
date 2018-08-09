@@ -79,6 +79,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         ByteBuffer blockBuffer = ByteBuffer.allocate(BLOCK_BYTES);
         Iterator<Node> levelIterator = root.levelIterator();
         long childBlockIndex = 1;
+        long dataLayerOffset = 0;
 
         while (levelIterator != null)
         {
@@ -92,7 +93,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
                 if (block.isSerializable())
                 {
-                    block.serialize(childBlockIndex, blockBuffer);
+                    dataLayerOffset += block.serialize(childBlockIndex, dataLayerOffset, blockBuffer);
                     flushBuffer(blockBuffer, out, numBlocks != 1);
                 }
 
@@ -128,9 +129,29 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             nodeMaxToken = maxToken;
         }
 
+
+        /***
+         * @return True if the node can be serialized to a given ByteBuffer, otherwise false. If false,
+         * {@link #serialize(long, long, ByteBuffer)} is not supported.
+         */
         public abstract boolean isSerializable();
-        public abstract void serialize(long childBlockIndex, ByteBuffer buf);
+
+        /**
+         * @param childBlockIndex The block index of this node's first child. This is only meaningful for nodes
+         *                        that have children. The block index is level-based. For a root with N children,
+         *                        the roots block index is 0, its children are 1 through N. Its first grandchild is
+         *                        N+1, its second grandchild is N+2, and so on.
+         * @param dataLayerOffset The current offset into the data layer of the tree. This offset might be encoded as a
+         *                        pointer to the token
+         * @param buf the buffer to serialize into
+         * @see #isSerializable()
+         * @return the number of bytes that will need to be consumed in the data layer of the tree when storing this block
+         *
+         */
+        public abstract long serialize(long childBlockIndex, long dataLayerOffset, ByteBuffer buf);
+
         public abstract int childCount();
+
         public abstract int tokenCount();
 
         public Long smallestToken()
@@ -143,6 +164,10 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             return nodeMaxToken;
         }
 
+        /**
+         * @return An iterator that iterates over the current block and any blocks to the right of it
+         * (those with greater tokens on the same level)
+         */
         public Iterator<Node> levelIterator()
         {
             return new LevelIterator(this);
@@ -270,61 +295,106 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                     buf.putLong(entry.value);
         }
 
-        public void serialize(long childBlockIndex, ByteBuffer buf)
+        public long serialize(long childBlockIndex, long dataLayerOffset, ByteBuffer buf)
         {
             serializeHeader(buf);
-            serializeData(buf);
+            long dataLayerBytesConsumed = serializeData(buf, dataLayerOffset);
             serializeOverflowCollisions(buf);
+
+            return dataLayerBytesConsumed;
         }
 
-        protected abstract void serializeData(ByteBuffer buf);
+        protected abstract long serializeData(ByteBuffer buf, long dataLayerOffset);
 
-        protected LeafEntry createEntry(final long tok, final ObjectSet<Entry> offsets)
+        protected LeafEntry createEntry(final long tok, final ObjectSet<Entry> entries, long dataLayerOffset)
         {
-            int offsetCount = offsets.size();
-            switch (offsetCount)
+            switch (entries.size())
             {
                 case 0:
-                    throw new AssertionError("no offsets for token " + tok);
+                    throw new AssertionError("no entries for token " + tok);
                 case 1:
-                    Entry entry = (Entry) offsets.toArray()[0];
-                    long offset = entry.partitionOffset();
+                    Entry entry = (Entry) entries.toArray()[0];
+                    long offset = entry.packableOffset().isPresent() ? entry.packableOffset().getAsLong() : dataLayerOffset;
                     if (offset > MAX_OFFSET)
                         throw new AssertionError("offset " + offset + " cannot be greater than " + MAX_OFFSET);
                     else if (offset <= Integer.MAX_VALUE)
-                        return new SimpleLeafEntry(tok, offset);
+                        return new SimpleLeafEntry(tok, entry, offset);
                     else
-                        return new FactoredOffsetLeafEntry(tok, offset);
+                        return new FactoredOffsetLeafEntry(tok, entry, offset);
                 case 2:
-                    Object[] entries = offsets.toArray();
-                    long[] rawOffsets = new long[] { ((Entry) entries[0]).partitionOffset(),
-                                                     ((Entry) entries[1]).partitionOffset() };
-                    if (rawOffsets[0] <= Integer.MAX_VALUE && rawOffsets[1] <= Integer.MAX_VALUE &&
-                        (rawOffsets[0] <= Short.MAX_VALUE || rawOffsets[1] <= Short.MAX_VALUE))
-                        return new PackedCollisionLeafEntry(tok, rawOffsets);
+                    long[] offsets;
+                    Object[] entryArr = entries.toArray();
+                    Entry entry1 = (Entry) entryArr[0];
+                    Entry entry2 = (Entry) entryArr[1];
+
+                    // if both entries are packable into the index layer of the tree then those are
+                    // the offsets stored. otherwise, both entries will be stored in the data layer
+                    // and the offsets stored in the tree are pointers into the data layer
+                    if (entry1.packableOffset().isPresent() && entry2.packableOffset().isPresent())
+                        offsets = new long[] { entry1.partitionOffset(),
+                                               entry2.partitionOffset() };
                     else
-                        return createOverflowEntry(tok, offsetCount, offsets);
+                        offsets = new long[] { dataLayerOffset,
+                                               dataLayerOffset + (entry1.packableOffset().isPresent() ? Long.BYTES : entry1.serializedSize() )};
+                    if (offsets[0] <= Integer.MAX_VALUE && offsets[1] <= Integer.MAX_VALUE &&
+                        (offsets[0] <= Short.MAX_VALUE || offsets[1] <= Short.MAX_VALUE))
+                        return new PackedCollisionLeafEntry(tok, new Entry[] {entry1, entry2}, offsets);
+                    else
+                        return createOverflowEntry(tok, entries, dataLayerOffset);
                 default:
-                    return createOverflowEntry(tok, offsetCount, offsets);
+                    return createOverflowEntry(tok, entries, dataLayerOffset);
             }
         }
 
-        private LeafEntry createOverflowEntry(final long tok, final int offsetCount, final ObjectSet<Entry> entries)
+        private LeafEntry createOverflowEntry(final long tok, final ObjectSet<Entry> entries, final long dataLayerOffset)
         {
             if (overflowCollisions == null)
                 overflowCollisions = new LongArrayList();
 
-            LeafEntry entry = new OverflowCollisionLeafEntry(tok, (short) overflowCollisions.size(), (short) offsetCount);
+            boolean isPackable = true;
             for (ObjectCursor<Entry> e : entries)
             {
-                if (overflowCollisions.size() == OVERFLOW_TRAILER_CAPACITY)
-                    throw new AssertionError("cannot have more than " + OVERFLOW_TRAILER_CAPACITY + " overflow collisions per leaf");
-                else
-                    overflowCollisions.add(e.value.partitionOffset());
+                isPackable &= e.value.packableOffset().isPresent();
+                if (!isPackable)
+                    break;
             }
+
+            long dataNeeded = 0;
+            LongArrayList newCollisions = new LongArrayList();
+            for (ObjectCursor<Entry> e : entries)
+            {
+                newCollisions.add(isPackable ? e.value.packableOffset().getAsLong() : dataLayerOffset + dataNeeded);
+                if (isPackable)
+                    continue;
+
+                dataNeeded += e.value.packableOffset().isPresent() ? Long.BYTES : e.value.serializedSize();
+            }
+
+
+
+            LeafEntry entry = new OverflowCollisionLeafEntry(tok,
+                                                             isPackable,
+                                                             dataNeeded,
+                                                             (short) overflowCollisions.size(),
+                                                             (short) newCollisions.size());
+
+            if ((overflowCollisions.size() + newCollisions.size()) >= OVERFLOW_TRAILER_CAPACITY)
+                throw new AssertionError("cannot have more than " + OVERFLOW_TRAILER_CAPACITY + " overflow collisions per leaf");
+            else
+                overflowCollisions.addAll(newCollisions);
+
             return entry;
         }
 
+        /**
+         * bits 0-10: unused
+         * bit 11: Data Mask. If set, this indicates the offset points to the data layer of the tree.
+         *         If unset, the offset points of the partition key in the sstable's primary index.
+         * bits 12-15: EntryType
+         * bits 16-31: offset extra (used to store collisions or parts of large offsets)
+         * bits 32-95: token (of the partition key)
+         * bits 96-127: offset data (used to store offsets, or parts of offsets, that fit into an 32 bits
+         */
         protected abstract class LeafEntry
         {
             protected final long token;
@@ -332,6 +402,8 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             abstract public EntryType type();
             abstract public int offsetData();
             abstract public short offsetExtra();
+            abstract public long dataNeeded();
+            abstract public short dataMask();
 
             public LeafEntry(final long tok)
             {
@@ -340,7 +412,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
             public void serialize(ByteBuffer buf)
             {
-                buf.putShort((short) type().ordinal())
+                buf.putShort((short) ((dataMask() << ENTRY_DATA_SHIFT) | type().ordinal()))
                    .putShort(offsetExtra())
                    .putLong(token)
                    .putInt(offsetData());
@@ -349,14 +421,40 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         }
 
 
+        protected abstract class SingleEntryLeafEntry extends LeafEntry
+        {
+
+            protected final Entry entry;
+
+            public SingleEntryLeafEntry(final long tok, final Entry entry)
+            {
+                super(tok);
+                this.entry = entry;
+            }
+
+            public long dataNeeded()
+            {
+                return entry.serializedSize();
+            }
+
+            public short dataMask()
+            {
+                // for backwards compatability, its important that if the offset is package (only a partition offset)
+                // then the bit in the mask is unset. Otherwise, if the partition offset isn't packable because
+                // there is more data in the entry, then the bit is set to indicate the entry is stored in the data layer
+                // and the offset written in the index layer is a pointer to the data layer
+                return entry.packableOffset().isPresent() ? ENTRY_IS_PACKABLE : ENTRY_NOT_PACKABLE;
+            }
+        }
+
         // assumes there is a single offset and the offset is <= Integer.MAX_VALUE
-        protected class SimpleLeafEntry extends LeafEntry
+        protected class SimpleLeafEntry extends SingleEntryLeafEntry
         {
             private final long offset;
 
-            public SimpleLeafEntry(final long tok, final long off)
+            public SimpleLeafEntry(final long tok, final Entry entry, final long off)
             {
-                super(tok);
+                super(tok, entry);
                 offset = off;
             }
 
@@ -374,18 +472,19 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             {
                 return 0;
             }
+
         }
 
         // assumes there is a single offset and Integer.MAX_VALUE < offset <= MAX_OFFSET
         // take the middle 32 bits of offset (or the top 32 when considering offset is max 48 bits)
         // and store where offset is normally stored. take bottom 16 bits of offset and store in entry header
-        private class FactoredOffsetLeafEntry extends LeafEntry
+        private class FactoredOffsetLeafEntry extends SingleEntryLeafEntry
         {
             private final long offset;
 
-            public FactoredOffsetLeafEntry(final long tok, final long off)
+            public FactoredOffsetLeafEntry(final long tok, final Entry entry, final long off)
             {
-                super(tok);
+                super(tok, entry);
                 offset = off;
             }
 
@@ -411,15 +510,26 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         // stored in entry header
         private class PackedCollisionLeafEntry extends LeafEntry
         {
+            private Entry smallerEntry;
             private short smallerOffset;
+            private Entry largerEntry;
             private int largerOffset;
 
-            public PackedCollisionLeafEntry(final long tok, final long[] offs)
+            public PackedCollisionLeafEntry(final long tok, final Entry[] entries, final long[] offs)
             {
                 super(tok);
 
                 smallerOffset = (short) Math.min(offs[0], offs[1]);
                 largerOffset = (int) Math.max(offs[0], offs[1]);
+
+                if (smallerOffset == offs[0])
+                {
+                    smallerEntry = entries[0];
+                    largerEntry = entries[1];
+                } else {
+                    smallerEntry = entries[1];
+                    largerEntry = entries[0];
+                }
             }
 
             public EntryType type()
@@ -436,6 +546,25 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             {
                 return smallerOffset;
             }
+
+            public long dataNeeded()
+            {
+                if (largerEntry.packableOffset().isPresent() && smallerEntry.packableOffset().isPresent())
+                    return 0;
+
+                long dataNeeded = largerEntry.packableOffset().isPresent() ? Long.BYTES : largerEntry.serializedSize();
+                dataNeeded += smallerEntry.packableOffset().isPresent() ? Long.BYTES : smallerEntry.serializedSize();
+
+                return dataNeeded;
+            }
+
+            public short dataMask()
+            {
+                // if both entries have packable offsets then both are written in the tree layer
+                // otherwise both are written in the data layer
+                return largerEntry.packableOffset().isPresent() &&
+                       smallerEntry.packableOffset().isPresent() ? ENTRY_IS_PACKABLE : ENTRY_NOT_PACKABLE;
+            }
         }
 
         // holds an entry with three or more offsets, or two offsets that cannot
@@ -446,12 +575,21 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         {
             private final short startIndex;
             private final short count;
+            private final boolean isPackable;
+            private final long dataNeeded;
 
-            public OverflowCollisionLeafEntry(final long tok, final short collisionStartIndex, final short collisionCount)
+            public OverflowCollisionLeafEntry(final long tok,
+                                              final boolean allPackable,
+                                              final long dataLayerSize,
+                                              final short collisionStartIndex,
+                                              final short collisionCount)
             {
                 super(tok);
+                isPackable = allPackable;
+                dataNeeded = dataLayerSize;
                 startIndex = collisionStartIndex;
                 count = collisionCount;
+
             }
 
             public EntryType type()
@@ -469,6 +607,15 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                 return count;
             }
 
+            public long dataNeeded()
+            {
+                return dataNeeded;
+            }
+
+            public short dataMask()
+            {
+                return isPackable ? ENTRY_IS_PACKABLE : ENTRY_NOT_PACKABLE;
+            }
         }
 
     }
@@ -489,11 +636,14 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             return true;
         }
 
-        public void serialize(long childBlockIndex, ByteBuffer buf)
+        public long serialize(long childBlockIndex, long dataLayerOffset, ByteBuffer buf)
         {
             serializeHeader(buf);
             serializeTokens(buf);
             serializeChildOffsets(childBlockIndex, buf);
+
+            // interior nodes do not point to and do not consume any space in the data layer of the tree
+            return 0;
         }
 
         public int childCount()

@@ -180,11 +180,19 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
             return true;
         }
 
-        protected void serializeData(ByteBuffer buf)
+        protected long serializeData(ByteBuffer buf, long dataLayerOffset)
         {
+            long offset = dataLayerOffset;
             for (Map.Entry<Long, ObjectSet<Entry>> entry : tokens.entrySet())
-                createEntry(entry.getKey(), entry.getValue()).serialize(buf);
+            {
+                LeafEntry le = createEntry(entry.getKey(), entry.getValue(), offset);
+                offset += le.dataNeeded();
+                le.serialize(buf);
+            }
+
+            return offset - dataLayerOffset;
         }
+
 
     }
 }

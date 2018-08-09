@@ -28,17 +28,21 @@ import com.carrotsearch.hppc.ObjectSet;
 
 public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTreeBuilder.Entry>>>
 {
-    int BLOCK_BYTES = 4096;
-    int BLOCK_HEADER_BYTES = 64;
-    int BLOCK_ENTRY_BYTES = 2 * Long.BYTES;
-    int OVERFLOW_TRAILER_BYTES = 64;
-    int OVERFLOW_ENTRY_BYTES = Long.BYTES;
-    int OVERFLOW_TRAILER_CAPACITY = OVERFLOW_TRAILER_BYTES / OVERFLOW_ENTRY_BYTES;
-    int TOKENS_PER_BLOCK = (BLOCK_BYTES - BLOCK_HEADER_BYTES - OVERFLOW_TRAILER_BYTES) / BLOCK_ENTRY_BYTES;
-    long MAX_OFFSET = (1L << 47) - 1; // 48 bits for (signed) offset
-    byte LAST_LEAF_SHIFT = 1;
-    byte SHARED_HEADER_BYTES = 19;
-    byte ENTRY_TYPE_MASK = 0x03;
+    final int BLOCK_BYTES = 4096;
+    final int BLOCK_HEADER_BYTES = 64;
+    final int BLOCK_ENTRY_BYTES = 2 * Long.BYTES;
+    final int OVERFLOW_TRAILER_BYTES = 64;
+    final int OVERFLOW_ENTRY_BYTES = Long.BYTES;
+    final int OVERFLOW_TRAILER_CAPACITY = OVERFLOW_TRAILER_BYTES / OVERFLOW_ENTRY_BYTES;
+    final int TOKENS_PER_BLOCK = (BLOCK_BYTES - BLOCK_HEADER_BYTES - OVERFLOW_TRAILER_BYTES) / BLOCK_ENTRY_BYTES;
+    final long MAX_OFFSET = (1L << 47) - 1; // 48 bits for (signed) offset
+    final byte LAST_LEAF_SHIFT = 1;
+    final byte SHARED_HEADER_BYTES = 19;
+    final byte ENTRY_TYPE_MASK = 0x03;
+    final short ENTRY_DATA_MASK = 0x0FF0;
+    final byte ENTRY_DATA_SHIFT = 4;
+    final short ENTRY_IS_PACKABLE = 0;
+    final short ENTRY_NOT_PACKABLE = 1;
 
     // note: ordinal positions are used here, do not change order
     enum EntryType
@@ -93,6 +97,25 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTre
         public long partitionOffset()
         {
             return partitionOffset;
+        }
+
+        /**
+         * @return {@link OptionalLong#empty()} if the data represented by this entry requires space in the data layer
+         * of the tree. Otherwise, return a {@link OptionalLong}, whose value is the offset of the partition key in the
+         * primary index, that can be packed into the index layer of the tree.
+         */
+        public OptionalLong packableOffset()
+        {
+            return OptionalLong.of(partitionOffset);
+        }
+
+        /**
+         * @return the amount of bytes needed in the data layer for this entry. If {@link #packableOffset()} returns
+         * any {@link OptionalLong} other than {@link OptionalLong#empty()} than this value will be 0.
+         */
+        public long serializedSize()
+        {
+            return 0;
         }
 
         public boolean equals(Object o)
