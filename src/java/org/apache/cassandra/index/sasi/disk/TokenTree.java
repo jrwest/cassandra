@@ -405,7 +405,7 @@ public class TokenTree
             });
         }
 
-        public ObjectSet<TokenTreeBuilder.Entry> getOffsets()
+        public TokenTreeBuilder.Entries getOffsets()
         {
             ObjectSet<TokenTreeBuilder.Entry> offsets = new ObjectOpenHashSet<>(4);
             for (TokenInfo i : info)
@@ -414,7 +414,7 @@ public class TokenTree
                     offsets.add(new TokenTreeBuilder.Entry(offset));
             }
 
-            return offsets;
+            return new TokenTreeBuilder.Entries(offsets);
         }
 
         public static OnDiskIndexEntry getTokenAt(MappedBuffer buffer, int idx, short leafSize, Function<Long, DecoratedKey> keyFetcher)

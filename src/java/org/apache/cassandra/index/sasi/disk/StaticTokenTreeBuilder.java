@@ -29,7 +29,6 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.Pair;
 
-import com.carrotsearch.hppc.LongSet;
 import com.google.common.collect.Iterators;
 
 /**
@@ -69,12 +68,12 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         throw new UnsupportedOperationException();
     }
 
-    public void add(SortedMap<Long, ObjectSet<Entry>> data)
+    public void add(SortedMap<Long, Entries> data)
     {
         throw new UnsupportedOperationException();
     }
 
-    public void add(Iterator<Pair<Long, ObjectSet<Entry>>> data)
+    public void add(Iterator<Pair<Long, Entries>> data)
     {
         throw new UnsupportedOperationException();
     }
@@ -84,12 +83,12 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         return tokenCount == 0;
     }
 
-    public Iterator<Pair<Long, ObjectSet<Entry>>> iterator()
+    public Iterator<Pair<Long, Entries>> iterator()
     {
         Iterator<IndexEntry> iterator = combinedTerm.getEntryIterator();
-        return new AbstractIterator<Pair<Long, ObjectSet<Entry>>>()
+        return new AbstractIterator<Pair<Long, Entries>>()
         {
-            protected Pair<Long, ObjectSet<Entry>> computeNext()
+            protected Pair<Long, Entries> computeNext()
             {
                 if (!iterator.hasNext())
                     return endOfData();

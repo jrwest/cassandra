@@ -306,15 +306,15 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
         protected abstract long serializeData(ByteBuffer buf, long dataLayerOffset);
 
-        protected LeafEntry createEntry(final long tok, final ObjectSet<Entry> entries, long dataLayerOffset)
+        protected LeafEntry createEntry(final long tok, final Entries entries, long dataLayerOffset)
         {
             switch (entries.size())
             {
                 case 0:
                     throw new AssertionError("no entries for token " + tok);
                 case 1:
-                    Entry entry = (Entry) entries.toArray()[0];
-                    long offset = entry.packableOffset().isPresent() ? entry.packableOffset().getAsLong() : dataLayerOffset;
+                    Entry entry = (Entry) entries.getEntries().toArray()[0];
+                    long offset = entries.isPackable() ? entry.packableOffset().getAsLong() : dataLayerOffset;
                     if (offset > MAX_OFFSET)
                         throw new AssertionError("offset " + offset + " cannot be greater than " + MAX_OFFSET);
                     else if (offset <= Integer.MAX_VALUE)
@@ -323,7 +323,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                         return new FactoredOffsetLeafEntry(tok, entry, offset);
                 case 2:
                     long[] offsets;
-                    Object[] entryArr = entries.toArray();
+                    Object[] entryArr = entries.getEntries().toArray();
                     Entry entry1 = (Entry) entryArr[0];
                     Entry entry2 = (Entry) entryArr[1];
 
@@ -346,31 +346,22 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
             }
         }
 
-        private LeafEntry createOverflowEntry(final long tok, final ObjectSet<Entry> entries, final long dataLayerOffset)
+        private LeafEntry createOverflowEntry(final long tok, Entries entries, final long dataLayerOffset)
         {
             if (overflowCollisions == null)
                 overflowCollisions = new LongArrayList();
 
-            boolean isPackable = true;
-            for (ObjectCursor<Entry> e : entries)
-            {
-                isPackable &= e.value.packableOffset().isPresent();
-                if (!isPackable)
-                    break;
-            }
-
             long dataNeeded = 0;
+            boolean isPackable = entries.isPackable();
             LongArrayList newCollisions = new LongArrayList();
-            for (ObjectCursor<Entry> e : entries)
+            for (Entry e : entries)
             {
-                newCollisions.add(isPackable ? e.value.packableOffset().getAsLong() : dataLayerOffset + dataNeeded);
+                newCollisions.add(isPackable ? e.packableOffset().getAsLong() : dataLayerOffset + dataNeeded);
                 if (isPackable)
                     continue;
 
-                dataNeeded += e.value.packableOffset().isPresent() ? Long.BYTES : e.value.serializedSize();
+                dataNeeded += e.packableOffset().isPresent() ? Long.BYTES : e.serializedSize();
             }
-
-
 
             LeafEntry entry = new OverflowCollisionLeafEntry(tok,
                                                              isPackable,

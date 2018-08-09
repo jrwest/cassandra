@@ -85,7 +85,7 @@ public class LongIterator extends RangeIterator<Long, IndexEntry>
         }
 
         @Override
-        public ObjectSet<TokenTreeBuilder.Entry> getOffsets()
+        public TokenTreeBuilder.Entries getOffsets()
         {
             // dont have any offsets because we dont have knowledge of any
             throw new UnsupportedOperationException();

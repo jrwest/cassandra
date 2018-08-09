@@ -39,7 +39,7 @@ public abstract class IndexEntry implements CombinedValue<Long>, Iterable<Decora
         return token;
     }
 
-    public abstract ObjectSet<TokenTreeBuilder.Entry> getOffsets();
+    public abstract TokenTreeBuilder.Entries getOffsets();
 
     public int compareTo(CombinedValue<Long> o)
     {

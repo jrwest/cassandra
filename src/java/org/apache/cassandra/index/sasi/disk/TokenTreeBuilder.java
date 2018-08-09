@@ -20,13 +20,18 @@ package org.apache.cassandra.index.sasi.disk;
 import java.io.IOException;
 import java.util.*;
 
+import com.google.common.collect.Iterators;
+import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
+
+import com.carrotsearch.hppc.ObjectOpenHashSet;
+import com.carrotsearch.hppc.cursors.ObjectCursor;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.Pair;
 
 import com.carrotsearch.hppc.ObjectSet;
 
-public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTreeBuilder.Entry>>>
+public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.Entries>>
 {
     final int BLOCK_BYTES = 4096;
     final int BLOCK_HEADER_BYTES = 64;
@@ -39,7 +44,6 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTre
     final byte LAST_LEAF_SHIFT = 1;
     final byte SHARED_HEADER_BYTES = 19;
     final byte ENTRY_TYPE_MASK = 0x03;
-    final short ENTRY_DATA_MASK = 0x0FF0;
     final byte ENTRY_DATA_SHIFT = 4;
     final short ENTRY_IS_PACKABLE = 0;
     final short ENTRY_NOT_PACKABLE = 1;
@@ -73,8 +77,8 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTre
     }
 
     void add(Long token, Entry entry);
-    void add(SortedMap<Long, ObjectSet<Entry>> data);
-    void add(Iterator<Pair<Long, ObjectSet<Entry>>> data);
+    void add(SortedMap<Long, Entries> data);
+    void add(Iterator<Pair<Long, Entries>> data);
     void add(TokenTreeBuilder ttb);
 
     boolean isEmpty();
@@ -84,6 +88,70 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, ObjectSet<TokenTre
 
     int serializedSize();
     void write(DataOutputPlus out) throws IOException;
+
+    public static class Entries implements Iterable<Entry>
+    {
+        private final ObjectSet<Entry> entries;
+        private boolean isPackable = true;
+
+        public Entries()
+        {
+            this(new ObjectOpenHashSet<>(2));
+        }
+
+        public Entries(ObjectSet<Entry> es)
+        {
+            entries = es;
+            isPackable = true;
+            for (ObjectCursor<Entry> entry : entries)
+                isPackable &= entry.value.packableOffset().isPresent();
+        }
+
+        public ObjectSet<Entry> getEntries()
+        {
+            return entries;
+        }
+
+        public void add(Entry entry)
+        {
+            entries.add(entry);
+            isPackable &= entry.packableOffset().isPresent();
+        }
+
+        public boolean isPackable()
+        {
+            return isPackable;
+        }
+
+        public Iterator<Entry> iterator()
+        {
+            return Iterators.transform(entries.iterator(), oc -> oc.value);
+        }
+
+        public int size()
+        {
+            return entries.size();
+        }
+
+        public boolean equals(Object o)
+        {
+            if (this == o) return true;
+
+            if (!(o instanceof Entries)) return false;
+
+            Entries entries1 = (Entries) o;
+
+            return entries.equals(entries1.entries);
+        }
+
+        public int hashCode()
+        {
+            return new HashCodeBuilder(17, 37)
+                   .append(entries)
+                   .append(isPackable)
+                   .toHashCode();
+        }
+    }
 
     public static class Entry
     {

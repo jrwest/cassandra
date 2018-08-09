@@ -95,7 +95,7 @@ public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
             }};
         }
 
-        public ObjectSet<TokenTreeBuilder.Entry> getOffsets()
+        public TokenTreeBuilder.Entries getOffsets()
         {
             // for an in-memory index entry we don't have/know of any on-disk offsets
             throw new UnsupportedOperationException();

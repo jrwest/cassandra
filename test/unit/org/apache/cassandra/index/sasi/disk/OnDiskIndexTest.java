@@ -620,9 +620,9 @@ public class OnDiskIndexTest
         }
     }
 
-    public void putAll(SortedMap<Long, ObjectSet<TokenTreeBuilder.Entry>> offsets, TokenTreeBuilder ttb)
+    public void putAll(SortedMap<Long, TokenTreeBuilder.Entries> offsets, TokenTreeBuilder ttb)
     {
-        for (Pair<Long, ObjectSet<TokenTreeBuilder.Entry>> entry : ttb)
+        for (Pair<Long, TokenTreeBuilder.Entries> entry : ttb)
             offsets.put(entry.left, entry.right);
     }
 
@@ -632,11 +632,11 @@ public class OnDiskIndexTest
         OnDiskIndexBuilder builderA = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
         OnDiskIndexBuilder builderB = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
 
-        TreeMap<Long, TreeMap<Long, ObjectSet<TokenTreeBuilder.Entry>>> expected = new TreeMap<>();
+        TreeMap<Long, TreeMap<Long, TokenTreeBuilder.Entries>> expected = new TreeMap<>();
 
         for (long i = 0; i <= 100; i++)
         {
-            TreeMap<Long, ObjectSet<TokenTreeBuilder.Entry>> offsets = expected.get(i);
+            TreeMap<Long, TokenTreeBuilder.Entries> offsets = expected.get(i);
             if (offsets == null)
                 expected.put(i, (offsets = new TreeMap<>()));
 
@@ -646,7 +646,7 @@ public class OnDiskIndexTest
 
         for (long i = 50; i < 100; i++)
         {
-            TreeMap<Long, ObjectSet<TokenTreeBuilder.Entry>> offsets = expected.get(i);
+            TreeMap<Long, TokenTreeBuilder.Entries> offsets = expected.get(i);
             if (offsets == null)
                 expected.put(i, (offsets = new TreeMap<>()));
 
@@ -669,14 +669,14 @@ public class OnDiskIndexTest
 
         RangeIterator<OnDiskIndex.DataTerm, CombinedTerm> union = OnDiskIndexIterator.union(a, b);
 
-        TreeMap<Long, TreeMap<Long, ObjectSet<TokenTreeBuilder.Entry>>> actual = new TreeMap<>();
+        TreeMap<Long, TreeMap<Long, TokenTreeBuilder.Entries>> actual = new TreeMap<>();
         while (union.hasNext())
         {
             CombinedTerm term = union.next();
 
             Long composedTerm = LongType.instance.compose(term.getTerm());
 
-            TreeMap<Long, ObjectSet<TokenTreeBuilder.Entry>> offsets = actual.get(composedTerm);
+            TreeMap<Long, TokenTreeBuilder.Entries> offsets = actual.get(composedTerm);
             if (offsets == null)
                 actual.put(composedTerm, (offsets = new TreeMap<>()));
 
@@ -701,7 +701,7 @@ public class OnDiskIndexTest
 
             Long composedTerm = LongType.instance.compose(term.getTerm());
 
-            TreeMap<Long, ObjectSet<TokenTreeBuilder.Entry>> offsets = actual.get(composedTerm);
+            TreeMap<Long, TokenTreeBuilder.Entries> offsets = actual.get(composedTerm);
             if (offsets == null)
                 actual.put(composedTerm, (offsets = new TreeMap<>()));
 
@@ -806,13 +806,13 @@ public class OnDiskIndexTest
     {
         Set<DecoratedKey> result = new HashSet<>();
 
-        Iterator<Pair<Long, ObjectSet<TokenTreeBuilder.Entry>>> offsetIter = offsets.iterator();
+        Iterator<Pair<Long, TokenTreeBuilder.Entries>> offsetIter = offsets.iterator();
         while (offsetIter.hasNext())
         {
-            ObjectSet<TokenTreeBuilder.Entry> v = offsetIter.next().right;
+            TokenTreeBuilder.Entries v = offsetIter.next().right;
 
-            for (ObjectCursor<TokenTreeBuilder.Entry> offset : v)
-                result.add(keyAt(offset.value.partitionOffset()));
+            for (TokenTreeBuilder.Entry offset : v)
+                result.add(keyAt(offset.partitionOffset()));
         }
         return result;
     }
@@ -911,10 +911,10 @@ public class OnDiskIndexTest
 
     private static void addAll(OnDiskIndexBuilder builder, ByteBuffer term, TokenTreeBuilder tokens)
     {
-        for (Pair<Long, ObjectSet<TokenTreeBuilder.Entry>> token : tokens)
+        for (Pair<Long, TokenTreeBuilder.Entries> token : tokens)
         {
-            for (ObjectCursor<TokenTreeBuilder.Entry> entry : token.right)
-                builder.add(term, keyAt(entry.value.partitionOffset()), entry.value.partitionOffset());
+            for (TokenTreeBuilder.Entry entry : token.right)
+                builder.add(term, keyAt(entry.partitionOffset()), entry.partitionOffset());
         }
     }
 
