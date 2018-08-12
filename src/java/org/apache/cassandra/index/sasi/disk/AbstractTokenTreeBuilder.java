@@ -366,7 +366,8 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                                                entry2.partitionOffset() };
                     else
                         offsets = new long[] { dataLayerOffset,
-                                               dataLayerOffset + (entry1.packableOffset().isPresent() ? Long.BYTES : entry1.serializedSize() )};
+                                               dataLayerOffset + (entry1.packableOffset().isPresent() ? ENTRY_UNPACKED_SIZE
+                                                                                                      : entry1.serializedSize() )};
                     if (offsets[0] <= Integer.MAX_VALUE && offsets[1] <= Integer.MAX_VALUE &&
                         (offsets[0] <= Short.MAX_VALUE || offsets[1] <= Short.MAX_VALUE))
                         return new PackedCollisionLeafEntry(tok, new Entry[] {entry1, entry2}, offsets);
@@ -391,7 +392,7 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                 if (isPackable)
                     continue;
 
-                dataNeeded += e.packableOffset().isPresent() ? Long.BYTES : e.serializedSize();
+                dataNeeded += e.packableOffset().isPresent() ? ENTRY_UNPACKED_SIZE: e.serializedSize();
             }
 
             LeafEntry entry = new OverflowCollisionLeafEntry(tok,
@@ -574,8 +575,8 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                 if (largerEntry.packableOffset().isPresent() && smallerEntry.packableOffset().isPresent())
                     return 0;
 
-                long dataNeeded = largerEntry.packableOffset().isPresent() ? Long.BYTES : largerEntry.serializedSize();
-                dataNeeded += smallerEntry.packableOffset().isPresent() ? Long.BYTES : smallerEntry.serializedSize();
+                long dataNeeded = largerEntry.packableOffset().isPresent() ? ENTRY_UNPACKED_SIZE : largerEntry.serializedSize();
+                dataNeeded += smallerEntry.packableOffset().isPresent() ? ENTRY_UNPACKED_SIZE : smallerEntry.serializedSize();
 
                 return dataNeeded;
             }
