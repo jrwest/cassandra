@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.Sets;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
@@ -81,6 +82,11 @@ public class QueryController
     public DataRange dataRange()
     {
         return command.dataRange();
+    }
+
+    public ClusteringComparator clusteringComparator()
+    {
+        return cfs.metadata().comparator;
     }
 
     public AbstractType<?> getKeyValidator()

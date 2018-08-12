@@ -19,14 +19,15 @@ package org.apache.cassandra.index.sasi.disk;
 
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
 
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.compaction.OperationType;
@@ -81,6 +82,7 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
     private final OperationType source;
 
     private final AbstractType<?> keyValidator;
+    private final ClusteringComparator clusteringComparator;
 
     @VisibleForTesting
     protected final Map<ColumnMetadata, Index> indexes;
@@ -90,11 +92,13 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
     private boolean isComplete;
 
     public PerSSTableIndexWriter(AbstractType<?> keyValidator,
+                                 ClusteringComparator clusteringComparator,
                                  Descriptor descriptor,
                                  OperationType source,
                                  Map<ColumnMetadata, ColumnIndex> supportedIndexes)
     {
         this.keyValidator = keyValidator;
+        this.clusteringComparator = clusteringComparator;
         this.descriptor = descriptor;
         this.source = source;
         this.indexes = Maps.newHashMapWithExpectedSize(supportedIndexes.size());
@@ -256,7 +260,7 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
                 try
                 {
                     File index = new File(segmentFile);
-                    return builder.finish(index) ? new OnDiskIndex(index, columnIndex.getValidator(), null) : null;
+                    return builder.finish(index) ? new OnDiskIndex(index, columnIndex.clusteringComparator(), columnIndex.getValidator(), null) : null;
                 }
                 catch (Exception | FSError e)
                 {
@@ -349,7 +353,8 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
 
         private OnDiskIndexBuilder newIndexBuilder()
         {
-            return new OnDiskIndexBuilder(keyValidator, columnIndex.getValidator(), columnIndex.getMode().mode);
+            return new OnDiskIndexBuilder(keyValidator, clusteringComparator,
+                                          columnIndex.getValidator(), columnIndex.getMode().mode);
         }
 
         public String filename(boolean isFinal)

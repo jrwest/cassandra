@@ -104,7 +104,7 @@ public class SASIIndex implements Index, INotificationConsumer
         this.config = config;
 
         ColumnMetadata column = TargetParser.parse(baseCfs.metadata(), config).left;
-        this.index = new ColumnIndex(baseCfs.metadata().partitionKeyType, column, config);
+        this.index = new ColumnIndex(baseCfs.metadata().partitionKeyType, baseCfs.metadata().comparator, column, config);
 
         Tracker tracker = baseCfs.getTracker();
         tracker.subscribe(this);
@@ -298,7 +298,9 @@ public class SASIIndex implements Index, INotificationConsumer
 
     public SSTableFlushObserver getFlushObserver(Descriptor descriptor, OperationType opType)
     {
-        return newWriter(baseCfs.metadata().partitionKeyType, descriptor, Collections.singletonMap(index.getDefinition(), index), opType);
+        return newWriter(baseCfs.metadata().partitionKeyType,
+                         baseCfs.metadata().comparator,
+                         descriptor, Collections.singletonMap(index.getDefinition(), index), opType);
     }
 
     public BiFunction<PartitionIterator, ReadCommand, PartitionIterator> postProcessorFor(ReadCommand command)
@@ -344,10 +346,11 @@ public class SASIIndex implements Index, INotificationConsumer
     }
 
     protected static PerSSTableIndexWriter newWriter(AbstractType<?> keyValidator,
+                                                     ClusteringComparator clusteringComparator,
                                                      Descriptor descriptor,
                                                      Map<ColumnMetadata, ColumnIndex> indexes,
                                                      OperationType opType)
     {
-        return new PerSSTableIndexWriter(keyValidator, descriptor, opType, indexes);
+        return new PerSSTableIndexWriter(keyValidator, clusteringComparator, descriptor, opType, indexes);
     }
 }

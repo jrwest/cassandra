@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.Term;
 import org.apache.cassandra.index.sasi.plan.Expression;
@@ -37,6 +38,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
@@ -101,6 +103,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
     protected final OnDiskIndexBuilder.Mode mode;
     protected final OnDiskIndexBuilder.TermSize termSize;
 
+    protected final ClusteringComparator clusteringComparator;
     protected final AbstractType<?> comparator;
     protected final MappedBuffer indexFile;
     protected final long indexSize;
@@ -116,10 +119,13 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
     protected final ByteBuffer minTerm, maxTerm, minKey, maxKey;
 
     @SuppressWarnings("resource")
-    public OnDiskIndex(File index, AbstractType<?> cmp, Function<Long, DecoratedKey> keyReader)
+    public OnDiskIndex(File index,
+                       ClusteringComparator clusteringCmp,
+                       AbstractType<?> cmp,
+                       Function<Long, DecoratedKey> keyReader)
     {
         keyFetcher = keyReader;
-
+        clusteringComparator = clusteringCmp;
         comparator = cmp;
         indexPath = index.getAbsolutePath();
 
@@ -404,9 +410,10 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
                 : block.getRange(0, block.termCount());
     }
 
+    @VisibleForTesting
     public Iterator<DataTerm> iteratorAt(ByteBuffer query, IteratorOrder order, boolean inclusive)
     {
-        Expression e = new Expression("", comparator);
+        Expression e = new Expression("", clusteringComparator, comparator);
         Expression.Bound bound = new Expression.Bound(query, inclusive);
 
         switch (order)
@@ -433,7 +440,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
 
     public Iterator<DataTerm> iterator()
     {
-        return new TermIterator(0, new Expression("", comparator), IteratorOrder.DESC);
+        return new TermIterator(0, new Expression("", clusteringComparator, comparator), IteratorOrder.DESC);
     }
 
     public void close() throws IOException
@@ -526,7 +533,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
 
         public OnDiskSuperBlock(MappedBuffer buffer)
         {
-            tokenTree = new TokenTree(descriptor, buffer);
+            tokenTree = new TokenTree(descriptor, clusteringComparator, buffer);
         }
 
         public RangeIterator<Long, IndexEntry> iterator()
@@ -563,7 +570,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
     {
         public DataBlock(MappedBuffer data)
         {
-            super(descriptor, data, BlockType.DATA);
+            super(descriptor, clusteringComparator, data, BlockType.DATA);
         }
 
         protected DataTerm cast(MappedBuffer data)
@@ -612,7 +619,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
     {
         public PointerBlock(MappedBuffer block)
         {
-            super(descriptor, block, BlockType.POINTER);
+            super(descriptor, clusteringComparator, block, BlockType.POINTER);
         }
 
         protected PointerTerm cast(MappedBuffer data)
@@ -639,7 +646,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
                 return new PrefetchedIndexEntryIterator(getSparseEntries());
 
             long offset = blockEnd + 4 + content.getInt(getDataOffset() + 1);
-            return new TokenTree(descriptor, indexFile.duplicate().position(offset)).iterator(keyFetcher);
+            return new TokenTree(descriptor, clusteringComparator, indexFile.duplicate().position(offset)).iterator(keyFetcher);
         }
 
         public boolean isSparse()
@@ -714,6 +721,11 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
         {
             endOfData();
         }
+    }
+
+    public ClusteringComparator clusteringComparator()
+    {
+        return clusteringComparator;
     }
 
     public AbstractType<?> getComparator()

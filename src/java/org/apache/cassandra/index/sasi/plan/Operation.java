@@ -283,7 +283,8 @@ public class Operation extends RangeIterator<Long, IndexEntry>
             List<Expression> perColumn = analyzed.get(e.column());
 
             if (columnIndex == null)
-                columnIndex = new ColumnIndex(controller.getKeyValidator(), e.column(), null);
+                columnIndex = new ColumnIndex(controller.getKeyValidator(), controller.clusteringComparator(),
+                                              e.column(), null);
 
             AbstractAnalyzer analyzer = columnIndex.getAnalyzer();
             analyzer.reset(e.getIndexValue().duplicate());

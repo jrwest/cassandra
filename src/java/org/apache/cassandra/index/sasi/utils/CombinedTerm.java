@@ -20,18 +20,23 @@ package org.apache.cassandra.index.sasi.utils;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.index.sasi.disk.*;
 import org.apache.cassandra.index.sasi.disk.OnDiskIndex.DataTerm;
 import org.apache.cassandra.db.marshal.AbstractType;
 
 public class CombinedTerm implements CombinedValue<DataTerm>
 {
+    private final ClusteringComparator clusteringComparator;
     private final AbstractType<?> comparator;
     private final DataTerm term;
     private final List<DataTerm> mergedTerms = new ArrayList<>();
 
-    public CombinedTerm(AbstractType<?> comparator, DataTerm term)
+    public CombinedTerm(ClusteringComparator clusteringComparator,
+                        AbstractType<?> comparator,
+                        DataTerm term)
     {
+        this.clusteringComparator = clusteringComparator;
         this.comparator = comparator;
         this.term = term;
     }
@@ -53,6 +58,11 @@ public class CombinedTerm implements CombinedValue<DataTerm>
         mergedTerms.stream().map(OnDiskIndex.DataTerm::getEntries).forEach(union::add);
 
         return union.build();
+    }
+
+    public ClusteringComparator clusteringComparator()
+    {
+        return clusteringComparator;
     }
 
     public TokenTreeBuilder getTokenTreeBuilder()

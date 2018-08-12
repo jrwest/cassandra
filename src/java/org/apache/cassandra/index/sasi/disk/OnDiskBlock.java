@@ -19,6 +19,7 @@ package org.apache.cassandra.index.sasi.disk;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.index.sasi.Term;
 import org.apache.cassandra.index.sasi.utils.MappedBuffer;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -37,7 +38,7 @@ public abstract class OnDiskBlock<T extends Term>
     protected final boolean hasCombinedIndex;
     protected final TokenTree combinedIndex;
 
-    public OnDiskBlock(Descriptor descriptor, MappedBuffer block, BlockType blockType)
+    public OnDiskBlock(Descriptor descriptor, ClusteringComparator clusteringComparator, MappedBuffer block, BlockType blockType)
     {
         blockIndex = block;
 
@@ -55,7 +56,8 @@ public abstract class OnDiskBlock<T extends Term>
         hasCombinedIndex = (combinedIndexOffset >= 0);
         long blockIndexOffset = blockOffset + OnDiskIndexBuilder.BLOCK_SIZE + 4 + combinedIndexOffset;
 
-        combinedIndex = hasCombinedIndex ? new TokenTree(descriptor, blockIndex.duplicate().position(blockIndexOffset)) : null;
+        combinedIndex = hasCombinedIndex ? new TokenTree(descriptor, clusteringComparator, blockIndex.duplicate().position(blockIndexOffset))
+                                         : null;
         blockIndexSize = block.getInt() * 2;
     }
 

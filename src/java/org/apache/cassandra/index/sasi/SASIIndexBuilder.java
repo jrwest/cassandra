@@ -24,6 +24,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
@@ -68,6 +69,7 @@ class SASIIndexBuilder extends SecondaryIndexBuilder
     public void build()
     {
         AbstractType<?> keyValidator = cfs.metadata().partitionKeyType;
+        ClusteringComparator clusteringComparator = cfs.metadata().comparator;
         for (Map.Entry<SSTableReader, Map<ColumnMetadata, ColumnIndex>> e : sstables.entrySet())
         {
             SSTableReader sstable = e.getKey();
@@ -75,7 +77,8 @@ class SASIIndexBuilder extends SecondaryIndexBuilder
 
             try (RandomAccessReader dataFile = sstable.openDataReader())
             {
-                PerSSTableIndexWriter indexWriter = SASIIndex.newWriter(keyValidator, sstable.descriptor, indexes, OperationType.COMPACTION);
+                PerSSTableIndexWriter indexWriter = SASIIndex.newWriter(keyValidator, clusteringComparator,
+                                                                        sstable.descriptor, indexes, OperationType.COMPACTION);
 
                 long previousKeyPosition = 0;
                 try (KeyIterator keys = new KeyIterator(sstable.descriptor, cfs.metadata()))

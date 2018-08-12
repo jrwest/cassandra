@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.DecoratedKey;
@@ -56,6 +57,7 @@ public class ColumnIndex
     private static final String FILE_NAME_FORMAT = "SI_%s.db";
 
     private final AbstractType<?> keyValidator;
+    private final ClusteringComparator clusteringComparator;
 
     private final ColumnMetadata column;
     private final Optional<IndexMetadata> config;
@@ -70,9 +72,11 @@ public class ColumnIndex
 
     private final boolean isTokenized;
 
-    public ColumnIndex(AbstractType<?> keyValidator, ColumnMetadata column, IndexMetadata metadata)
+    public ColumnIndex(AbstractType<?> keyValidator, ClusteringComparator clusteringComparator,
+                       ColumnMetadata column, IndexMetadata metadata)
     {
         this.keyValidator = keyValidator;
+        this.clusteringComparator = clusteringComparator;
         this.column = column;
         this.config = metadata == null ? Optional.empty() : Optional.of(metadata);
         this.mode = IndexMode.getMode(column, config);
@@ -97,6 +101,11 @@ public class ColumnIndex
     public AbstractType<?> keyValidator()
     {
         return keyValidator;
+    }
+
+    public ClusteringComparator clusteringComparator()
+    {
+        return clusteringComparator;
     }
 
     public long index(DecoratedKey key, Row row)

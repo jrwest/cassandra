@@ -18,6 +18,7 @@
 package org.apache.cassandra.index.sasi.disk;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.collect.Iterators;
@@ -26,6 +27,9 @@ import org.apache.commons.lang3.builder.HashCodeBuilder;
 
 import com.carrotsearch.hppc.ObjectOpenHashSet;
 import com.carrotsearch.hppc.cursors.ObjectCursor;
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
+import org.apache.cassandra.index.sasi.utils.MappedBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.Pair;
 
@@ -43,10 +47,14 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
     final long MAX_OFFSET = (1L << 47) - 1; // 48 bits for (signed) offset
     final byte LAST_LEAF_SHIFT = 1;
     final byte SHARED_HEADER_BYTES = 19;
-    final byte ENTRY_TYPE_MASK = 0x03;
+    final byte ENTRY_TYPE_MASK = 0x0F;
     final byte ENTRY_DATA_SHIFT = 4;
+    final byte ENTRY_DATA_MASK = 0x10;
     final short ENTRY_IS_PACKABLE = 0;
     final short ENTRY_NOT_PACKABLE = 1;
+    final short ENTRY_UNPACKED_SIZE = Long.BYTES;
+    final long ENTRY_UNPACKED_ZERO_SENTINEL = Long.MIN_VALUE;
+    final int ENTRY_MAX_CLUSTERING_SIZE = BLOCK_BYTES;
 
     // note: ordinal positions are used here, do not change order
     enum EntryType
@@ -71,12 +79,8 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
         }
     }
 
-    default void add(Long token, long position)
-    {
-        add(token, new Entry(position));
-    }
-
-    void add(Long token, Entry entry);
+    ClusteringComparator clusteringComparator();
+    void add(Long token, long partitionKeyPosition);
     void add(SortedMap<Long, Entries> data);
     void add(Iterator<Pair<Long, Entries>> data);
     void add(TokenTreeBuilder ttb);
@@ -91,20 +95,31 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
 
     public static class Entries implements Iterable<Entry>
     {
+        private final ClusteringComparator clusteringComparator;
         private final ObjectSet<Entry> entries;
         private boolean isPackable = true;
+        private int serializedSize  = 0;
 
-        public Entries()
+        public Entries(ClusteringComparator clusteringComparator)
         {
-            this(new ObjectOpenHashSet<>(2));
+            this(new ObjectOpenHashSet<>(2), clusteringComparator);
         }
 
-        public Entries(ObjectSet<Entry> es)
+        public Entries(ObjectSet<Entry> es, ClusteringComparator comparator)
         {
             entries = es;
+            clusteringComparator = comparator;
             isPackable = true;
             for (ObjectCursor<Entry> entry : entries)
-                isPackable &= entry.value.packableOffset().isPresent();
+            {
+                boolean entryPackable = entry.value.packableOffset().isPresent();
+
+                // tracks serialized size assuming isPackable may become false in the future, otherwise
+                // know we know if isPackable = true, serializedSize = 0, depsite what the value of the variable
+                // actually is
+                serializedSize = entryPackable ? ENTRY_UNPACKED_SIZE : entry.value.serializedSize();
+                isPackable &= entryPackable;
+            }
         }
 
         public ObjectSet<Entry> getEntries()
@@ -112,10 +127,73 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
             return entries;
         }
 
+        public void add(long partitionKeyPosition)
+        {
+            add(partitionKeyPosition, Clustering.EMPTY);
+        }
+
+        public void add(long partitionKeyPosition, Clustering clustering)
+        {
+            for (Entry e : this)
+            {
+                // if this is the same partition offset then its not a collision
+                // add the clustering (there is a new row indexed for a partition
+                // that the builder is already aware of)
+                if (e.partitionOffset == partitionKeyPosition)
+                {
+                    // if the clustering is non-empty then add it to the entry
+                    // otherwise there is nothing to do
+                    if (clustering != Clustering.EMPTY)
+                        serializedSize += e.addClustering(clustering);
+
+                    return;
+                }
+
+            }
+
+            // if we've reached this point this is either the first entry or a collision
+            Entry e =  (Clustering.EMPTY == clustering) ? new Entry(partitionKeyPosition)
+                                                        : new Entry(partitionKeyPosition, clusteringComparator, clustering);
+
+            isPackable &= e.packableOffset().isPresent();
+            serializedSize += e.packableOffset().isPresent() ? ENTRY_UNPACKED_SIZE : e.serializedSize();
+            entries.add(e);
+        }
+
         public void add(Entry entry)
         {
+            for (Entry ours : this)
+            {
+                if (ours.partitionOffset == entry.partitionOffset)
+                {
+                    // nothing to do here if both are packable and the same partition position
+                    if (ours.packableOffset().isPresent() && entry.packableOffset().isPresent())
+                        return;
+
+                    // for the same partition its expected that both entries are packable or not
+                    if ((ours.packableOffset().isPresent() && !entry.packableOffset().isPresent()) ||
+                        !ours.packableOffset().isPresent() && entry.packableOffset().isPresent())
+                        throw new IllegalStateException("same partition, different types of clustering");
+
+                    serializedSize += ours.addClustering(entry);
+                    return;
+                }
+            }
+
+            // if we've reached this point the entry is either the first or a collision
             entries.add(entry);
+            serializedSize += entry.packableOffset().isPresent() ? ENTRY_UNPACKED_SIZE : entry.serializedSize();
             isPackable &= entry.packableOffset().isPresent();
+        }
+
+        public void add(Entries es)
+        {
+            es.forEach(this::add);
+        }
+
+        public int serializedSize()
+        {
+            return isPackable ? 0 : serializedSize;
         }
 
         public boolean isPackable()
@@ -133,6 +211,19 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
             return entries.size();
         }
 
+        public void write(DataOutputPlus out) throws IOException
+        {
+            // all entries are packable so nothing is written to the data layer for these entries
+            if (isPackable)
+                return;
+
+            // The number of entries isn't written because when being reconstructed its not needed.
+            // Each individual entry is read given its offset (since the common case is one entry its better
+            // to not waste the space
+            for (Entry e : this)
+                e.write(out);
+        }
+
         public boolean equals(Object o)
         {
             if (this == o) return true;
@@ -141,14 +232,16 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
 
             Entries entries1 = (Entries) o;
 
-            return entries.equals(entries1.entries);
+            return new EqualsBuilder().append(entries, entries1.entries)
+                                      .append(isPackable, entries1.isPackable)
+                                      .append(serializedSize, entries1.serializedSize)
+                                      .isEquals();
         }
 
         public int hashCode()
         {
             return new HashCodeBuilder(17, 37)
                    .append(entries)
-                   .append(isPackable)
                    .toHashCode();
         }
     }
@@ -156,12 +249,64 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
     public static class Entry
     {
         private final long partitionOffset;
+        private final ClusteringComparator clusteringComparator;
+        private final NavigableSet<Clustering> clusterings;
+
+        public static Entry fromFile(MappedBuffer buffer, ClusteringComparator clusteringComparator, long position)
+        {
+            long origPos = buffer.position();
+            long partitionOffset = buffer.position(position).getLong();
+            if (partitionOffset < 0) // packable offset that was unpacked because of collisions
+            {
+                buffer.position(origPos);
+                return (partitionOffset == ENTRY_UNPACKED_ZERO_SENTINEL) ? new Entry(0)
+                                                                         : new Entry(partitionOffset * -1);
+            }
+
+            int numClusterings = buffer.getInt();
+            NavigableSet<Clustering> clusterings = new TreeSet<>(clusteringComparator);
+            for (int i = 0; i < numClusterings; i++)
+            {
+                long clusteringSize = buffer.getInt();
+                ByteBuffer clusteringBytes = buffer.getPageRegion(buffer.position(), (int) clusteringSize);
+                buffer.position(buffer.position() + clusteringSize);
+                clusterings.add(Clustering.serializer.deserialize(clusteringBytes, 0, clusteringComparator.subtypes()));
+            }
+
+            buffer.position(origPos);
+            return new Entry(partitionOffset, clusteringComparator, clusterings);
+        }
 
         public Entry(long partitionOffset)
         {
-            this.partitionOffset = partitionOffset;
+            this(partitionOffset, null, (NavigableSet<Clustering>) null);
         }
 
+        public Entry(long partitionOffset, ClusteringComparator clusteringComparator, Clustering clustering)
+        {
+            this(partitionOffset, clusteringComparator, new TreeSet<>(clusteringComparator));
+            ensureValidSize(clustering);
+            clusterings.add(clustering);
+        }
+
+        public Entry(long partitionOffset, ClusteringComparator clusteringComparator, NavigableSet<Clustering> clusterings)
+        {
+            assert (clusterings == null && clusteringComparator == null) ||
+                   clusteringComparator.equals(clusterings.comparator()) : "clustering comparators must be equal";
+
+            this.partitionOffset = partitionOffset;
+            this.clusteringComparator = clusteringComparator;
+            this.clusterings = clusterings;
+
+
+            if (clusterings != null)
+                for (Clustering c : clusterings)
+                    ensureValidSize(c);
+        }
+
+        /**
+         * @return The position of the partition key in the sstable's partition key offset
+         */
         public long partitionOffset()
         {
             return partitionOffset;
@@ -174,16 +319,90 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
          */
         public OptionalLong packableOffset()
         {
-            return OptionalLong.of(partitionOffset);
+            return clusterings == null ? OptionalLong.of(partitionOffset) : OptionalLong.empty();
         }
 
-        /**
-         * @return the amount of bytes needed in the data layer for this entry. If {@link #packableOffset()} returns
-         * any {@link OptionalLong} other than {@link OptionalLong#empty()} than this value will be 0.
-         */
-        public long serializedSize()
+        public int addClustering(Clustering clustering)
         {
-            return 0;
+            if (clusterings == null)
+                throw new IllegalStateException("cannot add clusterings to entry that doesn't have any");
+
+            if (clusterings.add(clustering))
+            {
+                long size = clusteringSize(clustering);
+                ensureValidSize(size);
+                return (int) size;
+            } else {
+                return 0;
+            }
+        }
+
+        public int addClustering(Entry other)
+        {
+            int size = 0;
+            for (Clustering c: other.clusterings)
+                size += clusterings.add(c) ? clusteringSize(c) : 0;
+
+            return size;
+        }
+
+        public int serializedSize()
+        {
+            if (clusterings == null)
+                return 0;
+
+            int size = Long.BYTES + Integer.BYTES; // partition offset + clustering count
+            for (Clustering c : clusterings)
+            {
+                long cs = clusteringSize(c);
+                ensureValidSize(cs);
+                size += (int) clusteringSize(c);
+            }
+
+            return size;
+        }
+
+        private void ensureValidSize(Clustering c)
+        {
+            ensureValidSize(clusteringSize(c));
+        }
+
+        private void ensureValidSize(long size)
+        {
+            if (size > ENTRY_MAX_CLUSTERING_SIZE)
+                throw new IllegalStateException(String.format("Clustering of size %d greater than max allowed size %d",
+                                                              size, ENTRY_MAX_CLUSTERING_SIZE));
+        }
+
+        private long clusteringSize(Clustering c)
+        {
+            // clustering size + clustering bytes
+            return Integer.BYTES + Clustering.serializer.serializedSize(c, 0, clusteringComparator.subtypes());
+        }
+
+        public void write(DataOutputPlus out) throws IOException
+        {
+            // if an entry that could be packed is asked to be written then there were collisions
+            // and the packed entry was "downgraded" to an unpacked one. In that case, it needs to be
+            // distinguishable from other entries. To do so, the fact that offsets are always positive is
+            // exploited. To represent 0, we use Long.MIN_VALUE since abs(Long.MIN_VALUE) > MAX_OFFSET.
+            if (packableOffset().isPresent())
+            {
+                out.writeLong(partitionOffset == 0 ? ENTRY_UNPACKED_ZERO_SENTINEL : partitionOffset * -1);
+            }
+            else
+            {
+                out.writeLong(partitionOffset);
+                out.writeInt(clusterings.size());
+                for (Clustering clustering : clusterings)
+                {
+                    // this downcast is safe because of ensureValidSize
+                    out.writeInt((int) Clustering.serializer.serializedSize(clustering, 0, clusteringComparator.subtypes()));
+                    Clustering.serializer.serialize(clustering, out, 0, clusteringComparator.subtypes());
+                }
+
+            }
+
         }
 
         public boolean equals(Object o)
@@ -193,7 +412,11 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
             if (!(o instanceof Entry)) return false;
 
             Entry entry = (Entry) o;
-            return entry.partitionOffset == partitionOffset;
+
+            return new EqualsBuilder()
+                   .append(partitionOffset, entry.partitionOffset)
+                   .append(clusterings, entry.clusterings)
+                   .isEquals();
         }
 
         public int hashCode()

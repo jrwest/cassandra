@@ -22,7 +22,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import com.carrotsearch.hppc.ObjectSet;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.plan.Expression.Op;
 import org.apache.cassandra.index.sasi.sa.IndexedTerm;
@@ -38,7 +38,6 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
 import com.carrotsearch.hppc.LongArrayList;
-import com.carrotsearch.hppc.LongSet;
 import com.carrotsearch.hppc.ShortArrayList;
 import com.google.common.annotations.VisibleForTesting;
 
@@ -141,6 +140,7 @@ public class OnDiskIndexBuilder
     private final TermSize termSize;
 
     private final AbstractType<?> keyComparator, termComparator;
+    private final ClusteringComparator clusteringComparator;
 
     private final Map<ByteBuffer, TokenTreeBuilder> terms;
     private final Mode mode;
@@ -149,14 +149,22 @@ public class OnDiskIndexBuilder
     private ByteBuffer minKey, maxKey;
     private long estimatedBytes;
 
-    public OnDiskIndexBuilder(AbstractType<?> keyComparator, AbstractType<?> comparator, Mode mode)
+    public OnDiskIndexBuilder(AbstractType<?> keyComparator,
+                              ClusteringComparator clusteringComparator,
+                              AbstractType<?> comparator,
+                              Mode mode)
     {
-        this(keyComparator, comparator, mode, true);
+        this(keyComparator, clusteringComparator, comparator, mode, true);
     }
 
-    public OnDiskIndexBuilder(AbstractType<?> keyComparator, AbstractType<?> comparator, Mode mode, boolean marksPartials)
+    public OnDiskIndexBuilder(AbstractType<?> keyComparator,
+                              ClusteringComparator clusteringComparator,
+                              AbstractType<?> comparator,
+                              Mode mode,
+                              boolean marksPartials)
     {
         this.keyComparator = keyComparator;
+        this.clusteringComparator = clusteringComparator;
         this.termComparator = comparator;
         this.terms = new HashMap<>();
         this.termSize = TermSize.sizeOf(comparator);
@@ -177,7 +185,7 @@ public class OnDiskIndexBuilder
         TokenTreeBuilder tokens = terms.get(term);
         if (tokens == null)
         {
-            terms.put(term, (tokens = new DynamicTokenTreeBuilder()));
+            terms.put(term, (tokens = new DynamicTokenTreeBuilder(clusteringComparator)));
 
             // on-heap size estimates from jol
             // 64 bytes for TTB + 48 bytes for TreeMap in TTB + size bytes for the term (map key)
@@ -297,8 +305,8 @@ public class OnDiskIndexBuilder
 
             out.skipBytes((int) (BLOCK_SIZE - out.position()));
 
-            dataLevel = mode == Mode.SPARSE ? new DataBuilderLevel(out, new MutableDataBlock(termComparator, mode))
-                                            : new MutableLevel<>(out, new MutableDataBlock(termComparator, mode));
+            dataLevel = mode == Mode.SPARSE ? new DataBuilderLevel(out, new MutableDataBlock(clusteringComparator, termComparator, mode))
+                                            : new MutableLevel<>(out, new MutableDataBlock(clusteringComparator, termComparator, mode));
             while (terms.hasNext())
             {
                 Pair<IndexedTerm, TokenTreeBuilder> term = terms.next();
@@ -488,7 +496,7 @@ public class OnDiskIndexBuilder
         public DataBuilderLevel(SequentialWriter out, MutableBlock<InMemoryDataTerm> block)
         {
             super(out, block);
-            superBlockTree = new DynamicTokenTreeBuilder();
+            superBlockTree = new DynamicTokenTreeBuilder(clusteringComparator);
         }
 
         public InMemoryPointerTerm add(InMemoryDataTerm term) throws IOException
@@ -512,7 +520,7 @@ public class OnDiskIndexBuilder
                 alignToBlock(out);
 
                 dataBlocksCnt = 0;
-                superBlockTree = new DynamicTokenTreeBuilder();
+                superBlockTree = new DynamicTokenTreeBuilder(clusteringComparator);
             }
         }
 
@@ -585,6 +593,7 @@ public class OnDiskIndexBuilder
     {
         private static final int MAX_KEYS_SPARSE = 5;
 
+        private final ClusteringComparator clusteringComparator;
         private final AbstractType<?> comparator;
         private final Mode mode;
 
@@ -593,11 +602,12 @@ public class OnDiskIndexBuilder
         private final List<TokenTreeBuilder> containers = new ArrayList<>();
         private TokenTreeBuilder combinedIndex;
 
-        public MutableDataBlock(AbstractType<?> comparator, Mode mode)
+        public MutableDataBlock(ClusteringComparator clusteringComparator, AbstractType<?> comparator, Mode mode)
         {
+            this.clusteringComparator = clusteringComparator;
             this.comparator = comparator;
             this.mode = mode;
-            this.combinedIndex = initCombinedIndex();
+            this.combinedIndex = initCombinedIndex(clusteringComparator);
         }
 
         protected void addInternal(InMemoryDataTerm term) throws IOException
@@ -647,7 +657,7 @@ public class OnDiskIndexBuilder
             alignToBlock(out);
 
             containers.clear();
-            combinedIndex = initCombinedIndex();
+            combinedIndex = initCombinedIndex(clusteringComparator);
 
             offset = 0;
         }
@@ -674,9 +684,9 @@ public class OnDiskIndexBuilder
             buffer.writeInt(offset);
         }
 
-        private TokenTreeBuilder initCombinedIndex()
+        private TokenTreeBuilder initCombinedIndex(ClusteringComparator clusteringComparator)
         {
-            return mode == Mode.SPARSE ? new DynamicTokenTreeBuilder() : null;
+            return mode == Mode.SPARSE ? new DynamicTokenTreeBuilder(clusteringComparator) : null;
         }
     }
 }

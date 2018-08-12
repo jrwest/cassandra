@@ -20,12 +20,14 @@ package org.apache.cassandra.index.sasi.utils;
 import java.io.IOException;
 import java.util.Iterator;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.index.sasi.disk.OnDiskIndex;
 import org.apache.cassandra.index.sasi.disk.OnDiskIndex.DataTerm;
 import org.apache.cassandra.db.marshal.AbstractType;
 
 public class OnDiskIndexIterator extends RangeIterator<DataTerm, CombinedTerm>
 {
+    private final ClusteringComparator clusteringComparator;
     private final AbstractType<?> comparator;
     private final Iterator<DataTerm> terms;
 
@@ -33,6 +35,7 @@ public class OnDiskIndexIterator extends RangeIterator<DataTerm, CombinedTerm>
     {
         super(index.min(), index.max(), Long.MAX_VALUE);
 
+        this.clusteringComparator = index.clusteringComparator();
         this.comparator = index.getComparator();
         this.terms = index.iterator();
     }
@@ -51,7 +54,7 @@ public class OnDiskIndexIterator extends RangeIterator<DataTerm, CombinedTerm>
 
     protected CombinedTerm computeNext()
     {
-        return terms.hasNext() ? new CombinedTerm(comparator, terms.next()) : endOfData();
+        return terms.hasNext() ? new CombinedTerm(clusteringComparator, comparator, terms.next()) : endOfData();
     }
 
     protected void performSkipTo(DataTerm nextToken)

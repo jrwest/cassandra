@@ -23,11 +23,10 @@ import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
-import com.carrotsearch.hppc.ObjectSet;
-import com.carrotsearch.hppc.cursors.ObjectCursor;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.BufferDecoratedKey;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.index.sasi.plan.Expression;
@@ -44,9 +43,6 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.MurmurHash;
 import org.apache.cassandra.utils.Pair;
 
-import com.carrotsearch.hppc.LongSet;
-import com.carrotsearch.hppc.cursors.LongCursor;
-
 import com.google.common.base.Function;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Sets;
@@ -58,6 +54,8 @@ import org.junit.Test;
 
 public class OnDiskIndexTest
 {
+
+    private static final ClusteringComparator emptyClustering = new ClusteringComparator();
     @BeforeClass
     public static void setupDD()
     {
@@ -81,7 +79,7 @@ public class OnDiskIndexTest
                 put(UTF8Type.instance.decompose("am"), keyBuilder(15L));
         }};
 
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, UTF8Type.instance, OnDiskIndexBuilder.Mode.CONTAINS);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, UTF8Type.instance, OnDiskIndexBuilder.Mode.CONTAINS);
         for (Map.Entry<ByteBuffer, TokenTreeBuilder> e : data.entrySet())
             addAll(builder, e.getKey(), e.getValue());
 
@@ -90,7 +88,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, UTF8Type.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, UTF8Type.instance, new KeyConverter());
 
         // first check if we can find exact matches
         for (Map.Entry<ByteBuffer, TokenTreeBuilder> e : data.entrySet())
@@ -137,7 +135,7 @@ public class OnDiskIndexTest
                 put(Int32Type.instance.decompose(0),  keyBuilder(11L, 12L, 1L));
         }};
 
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
         for (Map.Entry<ByteBuffer, TokenTreeBuilder> e : data.entrySet())
             addAll(builder, e.getKey(), e.getValue());
 
@@ -146,7 +144,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, Int32Type.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, Int32Type.instance, new KeyConverter());
 
         for (Map.Entry<ByteBuffer, TokenTreeBuilder> e : data.entrySet())
         {
@@ -225,7 +223,7 @@ public class OnDiskIndexTest
             add(Int32Type.instance.decompose(42));
         }};
 
-        OnDiskIndexBuilder iterTest = new OnDiskIndexBuilder(UTF8Type.instance, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder iterTest = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
         for (int i = 0; i < iterCheckNums.size(); i++)
             iterTest.add(iterCheckNums.get(i), keyAt((long) i), i);
 
@@ -234,7 +232,7 @@ public class OnDiskIndexTest
 
         iterTest.finish(iterIndex);
 
-        onDisk = new OnDiskIndex(iterIndex, Int32Type.instance, new KeyConverter());
+        onDisk = new OnDiskIndex(iterIndex, emptyClustering, Int32Type.instance, new KeyConverter());
 
         ByteBuffer number = Int32Type.instance.decompose(1);
         Assert.assertEquals(0, Iterators.size(onDisk.iteratorAt(number, OnDiskIndex.IteratorOrder.ASC, false)));
@@ -272,7 +270,7 @@ public class OnDiskIndexTest
     @Test
     public void testMultiSuffixMatches() throws Exception
     {
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, UTF8Type.instance, OnDiskIndexBuilder.Mode.CONTAINS)
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, UTF8Type.instance, OnDiskIndexBuilder.Mode.CONTAINS)
         {{
                 addAll(this, UTF8Type.instance.decompose("Eliza"), keyBuilder(1L, 2L));
                 addAll(this, UTF8Type.instance.decompose("Elizabeth"), keyBuilder(3L, 4L));
@@ -286,7 +284,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, UTF8Type.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, UTF8Type.instance, new KeyConverter());
 
         Assert.assertEquals(convert(1, 2, 3, 4, 5, 6), convert(onDisk.search(expressionFor("liz"))));
         Assert.assertEquals(convert(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), convert(onDisk.search(expressionFor("a"))));
@@ -312,7 +310,7 @@ public class OnDiskIndexTest
     @Test
     public void testSparseMode() throws Exception
     {
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.SPARSE);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, LongType.instance, OnDiskIndexBuilder.Mode.SPARSE);
 
         final long start = System.currentTimeMillis();
         final int numIterations = 100000;
@@ -325,7 +323,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, LongType.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, LongType.instance, new KeyConverter());
 
         ThreadLocalRandom random = ThreadLocalRandom.current();
 
@@ -374,7 +372,7 @@ public class OnDiskIndexTest
                 put(UTF8Type.instance.decompose("Aleksey"), keyBuilder(9L, 10L));
         }};
 
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, UTF8Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, UTF8Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
         for (Map.Entry<ByteBuffer, TokenTreeBuilder> e : data.entrySet())
             addAll(builder, e.getKey(), e.getValue());
 
@@ -383,7 +381,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, UTF8Type.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, UTF8Type.instance, new KeyConverter());
 
         // test whole words first
         Assert.assertEquals(convert(3, 4, 5, 6, 7, 8, 9, 10), convert(onDisk.search(expressionForNot("Aleksey", "Vijay", "Pavel"))));
@@ -418,7 +416,7 @@ public class OnDiskIndexTest
                 put(Int32Type.instance.decompose(0),  keyBuilder(11L, 12L, 1L));
         }};
 
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
         for (Map.Entry<ByteBuffer, TokenTreeBuilder> e : data.entrySet())
             addAll(builder, e.getKey(), e.getValue());
 
@@ -427,7 +425,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, Int32Type.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, Int32Type.instance, new KeyConverter());
 
         Assert.assertEquals(convert(1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12), convert(onDisk.search(expressionForNot(0, 10, 1))));
         Assert.assertEquals(convert(1, 2, 4, 5, 7, 9, 10, 11, 12), convert(onDisk.search(expressionForNot(0, 10, 1, 8))));
@@ -442,7 +440,7 @@ public class OnDiskIndexTest
         final long lower = 0;
         final long upper = 100000;
 
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.SPARSE);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, LongType.instance, OnDiskIndexBuilder.Mode.SPARSE);
         for (long i = lower; i <= upper; i++)
             builder.add(LongType.instance.decompose(i), keyAt(i), i);
 
@@ -451,7 +449,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, LongType.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, LongType.instance, new KeyConverter());
 
         ThreadLocalRandom random = ThreadLocalRandom.current();
 
@@ -527,8 +525,8 @@ public class OnDiskIndexTest
                 put(Int32Type.instance.decompose(5), Pair.create(keyAt(1L), 1L));
         }};
 
-        OnDiskIndexBuilder builder1 = new OnDiskIndexBuilder(UTF8Type.instance, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
-        OnDiskIndexBuilder builder2 = new OnDiskIndexBuilder(UTF8Type.instance, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder builder1 = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder builder2 = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, Int32Type.instance, OnDiskIndexBuilder.Mode.PREFIX);
         for (Map.Entry<ByteBuffer, Pair<DecoratedKey, Long>> e : data.entrySet())
         {
             DecoratedKey key = e.getValue().left;
@@ -546,8 +544,8 @@ public class OnDiskIndexTest
         builder1.finish(index1);
         builder2.finish(new Descriptor(Descriptor.Version.AA), index2);
 
-        OnDiskIndex onDisk1 = new OnDiskIndex(index1, Int32Type.instance, new KeyConverter());
-        OnDiskIndex onDisk2 = new OnDiskIndex(index2, Int32Type.instance, new KeyConverter());
+        OnDiskIndex onDisk1 = new OnDiskIndex(index1, emptyClustering, Int32Type.instance, new KeyConverter());
+        OnDiskIndex onDisk2 = new OnDiskIndex(index2, emptyClustering, Int32Type.instance, new KeyConverter());
 
         ByteBuffer number = Int32Type.instance.decompose(5);
 
@@ -568,7 +566,7 @@ public class OnDiskIndexTest
         terms.put(UTF8Type.instance.decompose("4567"), keyBuilder(7L, 8L));
         terms.put(UTF8Type.instance.decompose("5678"), keyBuilder(9L, 10L));
 
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, Int32Type.instance, OnDiskIndexBuilder.Mode.SPARSE);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, Int32Type.instance, OnDiskIndexBuilder.Mode.SPARSE);
         for (Map.Entry<ByteBuffer, TokenTreeBuilder> entry : terms.entrySet())
             addAll(builder, entry.getKey(), entry.getValue());
 
@@ -577,7 +575,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, Int32Type.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, Int32Type.instance, new KeyConverter());
         OnDiskIndex.OnDiskSuperBlock superBlock = onDisk.dataLevel.getSuperBlock(0);
         Iterator<IndexEntry> iter = superBlock.iterator();
 
@@ -596,7 +594,7 @@ public class OnDiskIndexTest
     @Test
     public void testSuperBlockRetrieval() throws Exception
     {
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.SPARSE);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, LongType.instance, OnDiskIndexBuilder.Mode.SPARSE);
         for (long i = 0; i < 100000; i++)
             builder.add(LongType.instance.decompose(i), keyAt(i), i);
 
@@ -605,7 +603,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDiskIndex = new OnDiskIndex(index, LongType.instance, new KeyConverter());
+        OnDiskIndex onDiskIndex = new OnDiskIndex(index, emptyClustering, LongType.instance, new KeyConverter());
 
         testSearchRangeWithSuperBlocks(onDiskIndex, 0, 500);
         testSearchRangeWithSuperBlocks(onDiskIndex, 300, 93456);
@@ -629,8 +627,8 @@ public class OnDiskIndexTest
     @Test
     public void testCombiningOfThePartitionedSA() throws Exception
     {
-        OnDiskIndexBuilder builderA = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
-        OnDiskIndexBuilder builderB = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder builderA = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder builderB = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
 
         TreeMap<Long, TreeMap<Long, TokenTreeBuilder.Entries>> expected = new TreeMap<>();
 
@@ -664,8 +662,8 @@ public class OnDiskIndexTest
         builderA.finish(indexA);
         builderB.finish(indexB);
 
-        OnDiskIndex a = new OnDiskIndex(indexA, LongType.instance, new KeyConverter());
-        OnDiskIndex b = new OnDiskIndex(indexB, LongType.instance, new KeyConverter());
+        OnDiskIndex a = new OnDiskIndex(indexA, emptyClustering, LongType.instance, new KeyConverter());
+        OnDiskIndex b = new OnDiskIndex(indexB, emptyClustering, LongType.instance, new KeyConverter());
 
         RangeIterator<OnDiskIndex.DataTerm, CombinedTerm> union = OnDiskIndexIterator.union(a, b);
 
@@ -688,10 +686,10 @@ public class OnDiskIndexTest
         File indexC = FileUtils.createTempFile("on-disk-sa-partition-final", ".db");
         indexC.deleteOnExit();
 
-        OnDiskIndexBuilder combined = new OnDiskIndexBuilder(UTF8Type.instance, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
+        OnDiskIndexBuilder combined = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, LongType.instance, OnDiskIndexBuilder.Mode.PREFIX);
         combined.finish(Pair.create(keyAt(0).getKey(), keyAt(100).getKey()), indexC, new CombinedTermIterator(a, b));
 
-        OnDiskIndex c = new OnDiskIndex(indexC, LongType.instance, new KeyConverter());
+        OnDiskIndex c = new OnDiskIndex(indexC, emptyClustering, LongType.instance, new KeyConverter());
         union = OnDiskIndexIterator.union(c);
         actual.clear();
 
@@ -732,7 +730,7 @@ public class OnDiskIndexTest
             put(UTF8Type.instance.decompose("lady pank"),  keyBuilder(3L));
         }};
 
-        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, UTF8Type.instance, OnDiskIndexBuilder.Mode.CONTAINS);
+        OnDiskIndexBuilder builder = new OnDiskIndexBuilder(UTF8Type.instance, emptyClustering, UTF8Type.instance, OnDiskIndexBuilder.Mode.CONTAINS);
         for (Map.Entry<ByteBuffer, TokenTreeBuilder> e : data.entrySet())
             addAll(builder, e.getKey(), e.getValue());
 
@@ -741,7 +739,7 @@ public class OnDiskIndexTest
 
         builder.finish(index);
 
-        OnDiskIndex onDisk = new OnDiskIndex(index, UTF8Type.instance, new KeyConverter());
+        OnDiskIndex onDisk = new OnDiskIndex(index, emptyClustering, UTF8Type.instance, new KeyConverter());
 
         // check that lady% return lady gaga (1) and lady pank (3) but not lady of bells(2)
         Assert.assertEquals(convert(1, 3), convert(onDisk.search(expressionFor("lady", Operator.LIKE_PREFIX))));
@@ -791,7 +789,7 @@ public class OnDiskIndexTest
 
     private static TokenTreeBuilder keyBuilder(Long... keys)
     {
-        TokenTreeBuilder builder = new DynamicTokenTreeBuilder();
+        TokenTreeBuilder builder = new DynamicTokenTreeBuilder(emptyClustering);
 
         for (final Long key : keys)
         {

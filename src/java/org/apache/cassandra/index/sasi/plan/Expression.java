@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.index.sasi.analyzer.AbstractAnalyzer;
@@ -115,7 +116,12 @@ public class Expression
     @VisibleForTesting
     public Expression(String name, AbstractType<?> validator)
     {
-        this(null, new ColumnIndex(UTF8Type.instance, ColumnMetadata.regularColumn("sasi", "internal", name, validator), null));
+        this(name, new ClusteringComparator(), validator);
+    }
+
+    public Expression(String name, ClusteringComparator clusteringComparator, AbstractType<?> validator)
+    {
+        this(null, new ColumnIndex(UTF8Type.instance, clusteringComparator, ColumnMetadata.regularColumn("sasi", "internal", name, validator), null));
     }
 
     public Expression setLower(Bound newLower)

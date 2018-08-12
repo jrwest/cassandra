@@ -24,19 +24,19 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import com.carrotsearch.hppc.ObjectSet;
-import com.carrotsearch.hppc.cursors.ObjectCursor;
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
 import com.carrotsearch.hppc.LongArrayList;
-import com.carrotsearch.hppc.LongSet;
 import com.carrotsearch.hppc.cursors.LongCursor;
 
 public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 {
+    protected final ClusteringComparator clusteringComparator;
     protected int numBlocks;
     protected Node root;
     protected InteriorNode rightmostParent;
@@ -45,6 +45,16 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
     protected long tokenCount = 0;
     protected long treeMinToken;
     protected long treeMaxToken;
+
+    public AbstractTokenTreeBuilder(ClusteringComparator clusteringComparator)
+    {
+        this.clusteringComparator = clusteringComparator;
+    }
+
+    public ClusteringComparator clusteringComparator()
+    {
+        return clusteringComparator;
+    }
 
     public void add(TokenTreeBuilder other)
     {
@@ -66,6 +76,12 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
 
     public int serializedSize()
     {
+        return indexLayerSize() + dataLayerSize();
+    }
+
+    protected abstract int dataLayerSize();
+    protected int indexLayerSize()
+    {
         if (numBlocks == 1)
             return BLOCK_HEADER_BYTES +
                    ((int) tokenCount * BLOCK_ENTRY_BYTES) +
@@ -75,6 +91,12 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
     }
 
     public void write(DataOutputPlus out) throws IOException
+    {
+        writeTree(out);
+        writeData(out);
+    }
+
+    protected void writeTree(DataOutputPlus out) throws IOException
     {
         ByteBuffer blockBuffer = ByteBuffer.allocate(BLOCK_BYTES);
         Iterator<Node> levelIterator = root.levelIterator();
@@ -104,6 +126,14 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         }
     }
 
+    protected void writeData(DataOutputPlus out) throws IOException
+    {
+        Iterator<Entries> entriesIterator = entriesIterator();
+        while (entriesIterator.hasNext())
+            entriesIterator.next().write(out);
+    }
+
+    protected abstract Iterator<Entries> entriesIterator();
     protected abstract void constructTree();
 
     protected void flushBuffer(ByteBuffer buffer, DataOutputPlus o, boolean align) throws IOException
@@ -229,7 +259,8 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
                 writeMagic(buf);
                 buf.putLong(tokenCount)
                    .putLong(treeMinToken)
-                   .putLong(treeMaxToken);
+                   .putLong(treeMaxToken)
+                   .putLong(indexLayerSize());
             }
 
             protected byte infoByte()

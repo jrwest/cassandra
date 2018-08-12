@@ -65,7 +65,7 @@ public class SSTableIndex
                 sstable.getFilename(),
                 columnIndex.getIndexName());
 
-        this.index = new OnDiskIndex(indexFile, validator, new DecoratedKeyFetcher(sstable));
+        this.index = new OnDiskIndex(indexFile, index.clusteringComparator(), validator, new DecoratedKeyFetcher(sstable));
     }
 
     public OnDiskIndexBuilder.Mode mode()

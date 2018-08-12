@@ -1684,7 +1684,7 @@ public class SASIIndexTest
         // first let's check that we get 'false' for 'isLiteral' if we don't set the option with special comparator
         ColumnMetadata columnA = ColumnMetadata.regularColumn(KS_NAME, CF_NAME, "special-A", stringType);
 
-        ColumnIndex indexA = new ColumnIndex(UTF8Type.instance, columnA, IndexMetadata.fromSchemaMetadata("special-index-A", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
+        ColumnIndex indexA = new ColumnIndex(UTF8Type.instance, new ClusteringComparator(), columnA, IndexMetadata.fromSchemaMetadata("special-index-A", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
         {{
             put(IndexTarget.CUSTOM_INDEX_OPTION_NAME, SASIIndex.class.getName());
         }}));
@@ -1695,7 +1695,7 @@ public class SASIIndexTest
         // now let's double-check that we do get 'true' when we set it
         ColumnMetadata columnB = ColumnMetadata.regularColumn(KS_NAME, CF_NAME, "special-B", stringType);
 
-        ColumnIndex indexB = new ColumnIndex(UTF8Type.instance, columnB, IndexMetadata.fromSchemaMetadata("special-index-B", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
+        ColumnIndex indexB = new ColumnIndex(UTF8Type.instance, new ClusteringComparator(), columnB, IndexMetadata.fromSchemaMetadata("special-index-B", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
         {{
             put(IndexTarget.CUSTOM_INDEX_OPTION_NAME, SASIIndex.class.getName());
             put("is_literal", "true");
@@ -1707,7 +1707,7 @@ public class SASIIndexTest
         // and finally we should also get a 'true' if it's built-in UTF-8/ASCII comparator
         ColumnMetadata columnC = ColumnMetadata.regularColumn(KS_NAME, CF_NAME, "special-C", UTF8Type.instance);
 
-        ColumnIndex indexC = new ColumnIndex(UTF8Type.instance, columnC, IndexMetadata.fromSchemaMetadata("special-index-C", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
+        ColumnIndex indexC = new ColumnIndex(UTF8Type.instance, new ClusteringComparator(), columnC, IndexMetadata.fromSchemaMetadata("special-index-C", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
         {{
             put(IndexTarget.CUSTOM_INDEX_OPTION_NAME, SASIIndex.class.getName());
         }}));
@@ -1717,7 +1717,7 @@ public class SASIIndexTest
 
         ColumnMetadata columnD = ColumnMetadata.regularColumn(KS_NAME, CF_NAME, "special-D", AsciiType.instance);
 
-        ColumnIndex indexD = new ColumnIndex(UTF8Type.instance, columnD, IndexMetadata.fromSchemaMetadata("special-index-D", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
+        ColumnIndex indexD = new ColumnIndex(UTF8Type.instance, new ClusteringComparator(), columnD, IndexMetadata.fromSchemaMetadata("special-index-D", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
         {{
             put(IndexTarget.CUSTOM_INDEX_OPTION_NAME, SASIIndex.class.getName());
         }}));
@@ -1728,7 +1728,7 @@ public class SASIIndexTest
         // and option should supersedes the comparator type
         ColumnMetadata columnE = ColumnMetadata.regularColumn(KS_NAME, CF_NAME, "special-E", UTF8Type.instance);
 
-        ColumnIndex indexE = new ColumnIndex(UTF8Type.instance, columnE, IndexMetadata.fromSchemaMetadata("special-index-E", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
+        ColumnIndex indexE = new ColumnIndex(UTF8Type.instance, new ClusteringComparator(), columnE, IndexMetadata.fromSchemaMetadata("special-index-E", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
         {{
             put(IndexTarget.CUSTOM_INDEX_OPTION_NAME, SASIIndex.class.getName());
             put("is_literal", "false");
@@ -1743,7 +1743,7 @@ public class SASIIndexTest
                                                               "special-F",
                                                               ListType.getInstance(UTF8Type.instance, false));
 
-        ColumnIndex indexF = new ColumnIndex(UTF8Type.instance, columnF, IndexMetadata.fromSchemaMetadata("special-index-F", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
+        ColumnIndex indexF = new ColumnIndex(UTF8Type.instance, new ClusteringComparator(), columnF, IndexMetadata.fromSchemaMetadata("special-index-F", IndexMetadata.Kind.CUSTOM, new HashMap<String, String>()
         {{
             put(IndexTarget.CUSTOM_INDEX_OPTION_NAME, SASIIndex.class.getName());
         }}));

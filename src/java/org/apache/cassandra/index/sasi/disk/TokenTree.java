@@ -22,6 +22,8 @@ import java.util.*;
 
 import com.carrotsearch.hppc.ObjectOpenHashSet;
 import com.carrotsearch.hppc.ObjectSet;
+import com.carrotsearch.hppc.cursors.ObjectCursor;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.utils.AbstractIterator;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
@@ -29,14 +31,15 @@ import org.apache.cassandra.index.sasi.utils.MappedBuffer;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
 import org.apache.cassandra.utils.MergeIterator;
 
-import com.carrotsearch.hppc.LongOpenHashSet;
-import com.carrotsearch.hppc.LongSet;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.collect.Iterators;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 
+import static org.apache.cassandra.index.sasi.disk.TokenTreeBuilder.ENTRY_DATA_MASK;
 import static org.apache.cassandra.index.sasi.disk.TokenTreeBuilder.EntryType;
+import static org.apache.cassandra.index.sasi.disk.TokenTreeBuilder.Entries;
+import static org.apache.cassandra.index.sasi.disk.TokenTreeBuilder.Entry;
 
 // Note: all of the seek-able offsets contained in TokenTree should be sizeof(long)
 // even if currently only lower int portion of them if used, because that makes
@@ -48,21 +51,24 @@ public class TokenTree
     private static final int SHORT_BYTES = Short.SIZE / 8;
 
     private final Descriptor descriptor;
+    private final ClusteringComparator clusteringComparator;
     private final MappedBuffer file;
     private final long startPos;
+    private final long dataStart;
     private final long treeMinToken;
     private final long treeMaxToken;
     private final long tokenCount;
 
     @VisibleForTesting
-    protected TokenTree(MappedBuffer tokenTree)
+    protected TokenTree(ClusteringComparator clusteringComparator, MappedBuffer tokenTree)
     {
-        this(Descriptor.CURRENT, tokenTree);
+        this(Descriptor.CURRENT, clusteringComparator, tokenTree);
     }
 
-    public TokenTree(Descriptor d, MappedBuffer tokenTree)
+    public TokenTree(Descriptor d, ClusteringComparator clustering, MappedBuffer tokenTree)
     {
         descriptor = d;
+        clusteringComparator = clustering;
         file = tokenTree;
         startPos = file.position();
 
@@ -74,6 +80,7 @@ public class TokenTree
         tokenCount = file.getLong();
         treeMinToken = file.getLong();
         treeMaxToken = file.getLong();
+        dataStart = startPos + file.getLong();
     }
 
     public long getCount()
@@ -97,7 +104,7 @@ public class TokenTree
 
         file.position(leafStart + TokenTreeBuilder.BLOCK_HEADER_BYTES);
 
-        OnDiskIndexEntry token = OnDiskIndexEntry.getTokenAt(file, tokenIndex, leafSize, keyFetcher);
+        OnDiskIndexEntry token = OnDiskIndexEntry.getTokenAt(file, clusteringComparator, tokenIndex, leafSize, dataStart, keyFetcher);
         return token.get().equals(searchToken) ? token : null;
     }
 
@@ -311,7 +318,7 @@ public class TokenTree
 
         private IndexEntry getTokenAt(int idx)
         {
-            return OnDiskIndexEntry.getTokenAt(file, idx, leafSize, keyFetcher);
+            return OnDiskIndexEntry.getTokenAt(file, clusteringComparator, idx, leafSize, dataStart, keyFetcher);
         }
 
         private long getTokenPosition(int idx)
@@ -349,10 +356,11 @@ public class TokenTree
         private final Set<TokenInfo> info = new HashSet<>(2);
         private final Set<DecoratedKey> loadedKeys = new TreeSet<>(DecoratedKey.comparator);
 
-        public OnDiskIndexEntry(MappedBuffer buffer, long position, short leafSize, Function<Long, DecoratedKey> keyFetcher)
+        public OnDiskIndexEntry(ClusteringComparator clusteringComparator, MappedBuffer buffer,
+                                long position, short leafSize, long dataStart, Function<Long, DecoratedKey> keyFetcher)
         {
             super(buffer.getLong(position + (2 * SHORT_BYTES)));
-            info.add(new TokenInfo(buffer, position, leafSize, keyFetcher));
+            info.add(new TokenInfo(clusteringComparator, buffer, position, leafSize, dataStart, keyFetcher));
         }
 
         public void merge(CombinedValue<Long> other)
@@ -405,21 +413,25 @@ public class TokenTree
             });
         }
 
-        public TokenTreeBuilder.Entries getOffsets()
+        public Entries getOffsets()
         {
-            ObjectSet<TokenTreeBuilder.Entry> offsets = new ObjectOpenHashSet<>(4);
+            Entries entries = null;
             for (TokenInfo i : info)
             {
-                for (long offset : i.fetchOffsets())
-                    offsets.add(new TokenTreeBuilder.Entry(offset));
+                Entries currentEntries = i.fetchEntries();
+                if (entries == null)
+                    entries = currentEntries;
+                else
+                    entries.add(currentEntries);
             }
 
-            return new TokenTreeBuilder.Entries(offsets);
+            return entries;
         }
 
-        public static OnDiskIndexEntry getTokenAt(MappedBuffer buffer, int idx, short leafSize, Function<Long, DecoratedKey> keyFetcher)
+        public static OnDiskIndexEntry getTokenAt(MappedBuffer buffer, ClusteringComparator clusteringComparator,
+                                                  int idx, short leafSize, long dataStart, Function<Long, DecoratedKey> keyFetcher)
         {
-            return new OnDiskIndexEntry(buffer, getEntryPosition(idx, buffer), leafSize, keyFetcher);
+            return new OnDiskIndexEntry(clusteringComparator, buffer, getEntryPosition(idx, buffer), leafSize, dataStart, keyFetcher);
         }
 
         private static long getEntryPosition(int idx, MappedBuffer file)
@@ -431,23 +443,28 @@ public class TokenTree
 
     private static class TokenInfo
     {
+        private final ClusteringComparator clusteringComparator;
         private final MappedBuffer buffer;
         private final Function<Long, DecoratedKey> keyFetcher;
 
         private final long position;
+        private final long dataStart;
         private final short leafSize;
 
-        public TokenInfo(MappedBuffer buffer, long position, short leafSize, Function<Long, DecoratedKey> keyFetcher)
+        public TokenInfo(ClusteringComparator clusteringComparator, MappedBuffer buffer,
+                         long position, short leafSize, long dataStart, Function<Long, DecoratedKey> keyFetcher)
         {
             this.keyFetcher = keyFetcher;
+            this.clusteringComparator = clusteringComparator;
             this.buffer = buffer;
             this.position = position;
+            this.dataStart = dataStart;
             this.leafSize = leafSize;
         }
 
         public Iterator<DecoratedKey> iterator()
         {
-            return new KeyIterator(keyFetcher, fetchOffsets());
+            return new KeyIterator(keyFetcher, fetchEntries());
         }
 
         public int hashCode()
@@ -464,8 +481,9 @@ public class TokenTree
             return keyFetcher == o.keyFetcher && position == o.position;
         }
 
-        private long[] fetchOffsets()
+        private Entries fetchEntries()
         {
+            ObjectSet<Entry> entries = new ObjectOpenHashSet<>(2);
             short info = buffer.getShort(position);
             // offset extra is unsigned short (right-most 16 bits of 48 bits allowed for an offset)
             int offsetExtra = buffer.getShort(position + SHORT_BYTES) & 0xFFFF;
@@ -473,48 +491,78 @@ public class TokenTree
             int offsetData = buffer.getInt(position + (2 * SHORT_BYTES) + LONG_BYTES);
 
             EntryType type = EntryType.of(info & TokenTreeBuilder.ENTRY_TYPE_MASK);
+            boolean packed = (info & ENTRY_DATA_MASK) == 0;
 
+            long offset = offsetData;
             switch (type)
             {
+                case FACTORED:
+                    offset = (((long) offsetData) << Short.SIZE) + offsetExtra;
+                    // fall through is intentional here. factored and simple are handled the same except
+                    // for how they are stored
                 case SIMPLE:
-                    return new long[] { offsetData };
+                    Entry entry = packed ? new Entry(offset)
+                                         : Entry.fromFile(buffer, clusteringComparator,  dataStart + offset);
+                    entries.add(entry);
+                    break;
+
 
                 case OVERFLOW:
-                    long[] offsets = new long[offsetExtra]; // offsetShort contains count of tokens
+                    long[] overflowOffsets = new long[offsetExtra]; // offsetExtra contains count of tokens
                     long offsetPos = (buffer.position() + (2 * (leafSize * LONG_BYTES)) + (offsetData * LONG_BYTES));
 
                     for (int i = 0; i < offsetExtra; i++)
-                        offsets[i] = buffer.getLong(offsetPos + (i * LONG_BYTES));
+                        overflowOffsets[i] = buffer.getLong(offsetPos + (i * LONG_BYTES));
 
-                    return offsets;
+                    if (packed)
+                    {
+                        for (long o : overflowOffsets)
+                            entries.add(new Entry(o));
+                    } else
+                    {
+                        for (long o : overflowOffsets)
+                            entries.add(Entry.fromFile(buffer, clusteringComparator, dataStart + o));
+                    }
 
-                case FACTORED:
-                    return new long[] { (((long) offsetData) << Short.SIZE) + offsetExtra };
-
+                    break;
                 case PACKED:
-                    return new long[] { offsetExtra, offsetData };
+                    long packedOffsets[] = new long[] { offsetExtra, offsetData };
+                    if (packed)
+                    {
+                        for (long o : packedOffsets)
+                            entries.add(new Entry(o));
+                    } else
+                    {
+                        for (long o : packedOffsets)
+                            entries.add(Entry.fromFile(buffer, clusteringComparator, dataStart + o));
+                    }
+                    break;
 
                 default:
                     throw new IllegalStateException("Unknown entry type: " + type);
             }
+
+            return new Entries(entries, clusteringComparator);
         }
     }
 
     private static class KeyIterator extends AbstractIterator<DecoratedKey>
     {
         private final Function<Long, DecoratedKey> keyFetcher;
-        private final long[] offsets;
-        private int index = 0;
+        private final Iterator<ObjectCursor<TokenTreeBuilder.Entry>> entries;
 
-        public KeyIterator(Function<Long, DecoratedKey> keyFetcher, long[] offsets)
+        public KeyIterator(Function<Long, DecoratedKey> keyFetcher, TokenTreeBuilder.Entries entries)
         {
             this.keyFetcher = keyFetcher;
-            this.offsets = offsets;
+            this.entries = entries.getEntries().iterator();
         }
 
         public DecoratedKey computeNext()
         {
-            return index < offsets.length ? keyFetcher.apply(offsets[index++]) : endOfData();
+            if (!entries.hasNext())
+                return endOfData();
+
+            return keyFetcher.apply(entries.next().value.partitionOffset());
         }
     }
 }

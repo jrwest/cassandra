@@ -17,9 +17,12 @@
  */
 package org.apache.cassandra.index.sasi.disk;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.db.ClusteringComparator;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.Pair;
 
@@ -27,27 +30,30 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
 {
     private final SortedMap<Long, Entries> tokens = new TreeMap<>();
 
-
-    public DynamicTokenTreeBuilder()
-    {}
+    public DynamicTokenTreeBuilder(ClusteringComparator clusteringComparator)
+    {
+        super(clusteringComparator);
+    }
 
     public DynamicTokenTreeBuilder(TokenTreeBuilder data)
     {
+        this(data.clusteringComparator());
         add(data);
     }
 
-    public DynamicTokenTreeBuilder(SortedMap<Long, Entries> data)
+    public DynamicTokenTreeBuilder(ClusteringComparator clusteringComparator, SortedMap<Long, Entries> data)
     {
+        this(clusteringComparator);
         add(data);
     }
 
-    public void add(Long token, Entry entry)
+    public void add(Long token, long partitionKeyPosition)
     {
         Entries found = tokens.get(token);
         if (found == null)
-            tokens.put(token, (found = new Entries()));
+            tokens.put(token, (found = new Entries(clusteringComparator)));
 
-        found.add(entry);
+        found.add(partitionKeyPosition);
     }
 
     public void add(Iterator<Pair<Long, Entries>> data)
@@ -55,8 +61,12 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
         while (data.hasNext())
         {
             Pair<Long, Entries> item = data.next();
+            Entries entries = tokens.get(item.left);
+            if (entries == null)
+                tokens.put(item.left, (entries = new Entries(clusteringComparator)));
+
             for (Entry e : item.right)
-                add(item.left, e);
+                entries.add(e);
         }
     }
 
@@ -66,7 +76,7 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
         {
             Entries entries = tokens.get(newEntries.getKey());
             if (entries == null)
-                tokens.put(newEntries.getKey(), (entries = new Entries()));
+                tokens.put(newEntries.getKey(), (entries = new Entries(clusteringComparator)));
 
             for (Entry newEntry : newEntries.getValue())
                 entries.add(newEntry);
@@ -92,6 +102,20 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
     public boolean isEmpty()
     {
         return tokens.size() == 0;
+    }
+
+    protected Iterator<Entries> entriesIterator()
+    {
+        return tokens.values().iterator();
+    }
+
+    protected int dataLayerSize()
+    {
+        int size = 0;
+        for (Entries es : tokens.values())
+            size += es.serializedSize();
+
+        return size;
     }
 
     protected void constructTree()

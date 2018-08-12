@@ -22,7 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.SortedMap;
 
-import com.carrotsearch.hppc.ObjectSet;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.index.sasi.utils.CombinedTerm;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -57,13 +57,16 @@ import com.google.common.collect.Iterators;
 public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
 {
     private final CombinedTerm combinedTerm;
+    private int dataLayerSize;
 
     public StaticTokenTreeBuilder(CombinedTerm term)
     {
+        super(term.clusteringComparator());
         combinedTerm = term;
+        dataLayerSize = 0;
     }
 
-    public void add(Long token, Entry entry)
+    public void add(Long token, long partitionKeyPosition)
     {
         throw new UnsupportedOperationException();
     }
@@ -105,12 +108,12 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
     }
 
     @Override
-    public void write(DataOutputPlus out) throws IOException
+    public void writeTree(DataOutputPlus out) throws IOException
     {
         // if the root is not a leaf then none of the leaves have been written (all are PartialLeaf)
         // so write out the last layer of the tree by converting PartialLeaf to StaticLeaf and
         // iterating the data once more
-        super.write(out);
+        super.writeTree(out);
         if (root.isLeaf())
             return;
 
@@ -128,11 +131,22 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
 
     }
 
+    protected Iterator<Entries> entriesIterator()
+    {
+        return Iterators.transform(combinedTerm.getEntryIterator(), e -> e.getOffsets());
+    }
+
+    protected int dataLayerSize()
+    {
+        return dataLayerSize;
+    }
+
     protected void constructTree()
     {
         RangeIterator<Long, IndexEntry> entries = combinedTerm.getEntryIterator();
 
         tokenCount = 0;
+        dataLayerSize = 0;
         treeMinToken = entries.getMinimum();
         treeMaxToken = entries.getMaximum();
         numBlocks = 1;
@@ -144,12 +158,15 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         int leafSize = 0;
         while (entries.hasNext())
         {
-            Long token = entries.next().get();
+            IndexEntry entry = entries.next();
+            Long token = entry.get();
             if (firstToken == null)
                 firstToken = token;
 
+            dataLayerSize += entry.getOffsets().serializedSize();
             tokenCount++;
             leafSize++;
+
 
             // skip until the last token in the leaf
             if (tokenCount % TOKENS_PER_BLOCK != 0 && token != treeMaxToken)

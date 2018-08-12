@@ -25,6 +25,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Keyspace;
@@ -134,7 +135,7 @@ public class PerSSTableIndexWriterTest extends SchemaLoader
         for (String segment : segments)
             Assert.assertFalse(new File(segment).exists());
 
-        OnDiskIndex index = new OnDiskIndex(new File(indexFile), Int32Type.instance, keyPosition -> {
+        OnDiskIndex index = new OnDiskIndex(new File(indexFile), new ClusteringComparator(), Int32Type.instance, keyPosition -> {
             ByteBuffer key = ByteBufferUtil.bytes(String.format(keyFormat, keyPosition));
             return cfs.metadata().partitioner.decorateKey(key);
         });
