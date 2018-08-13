@@ -54,6 +54,7 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
     final short ENTRY_NOT_PACKABLE = 1;
     final short ENTRY_UNPACKED_SIZE = Long.BYTES;
     final long ENTRY_UNPACKED_ZERO_SENTINEL = Long.MIN_VALUE;
+    final int ENTRY_STATIC_CLUSTERING_SENTINEL = Integer.MIN_VALUE;
     final int ENTRY_MAX_CLUSTERING_SIZE = BLOCK_BYTES;
 
     // note: ordinal positions are used here, do not change order
@@ -267,10 +268,16 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
             NavigableSet<Clustering> clusterings = new TreeSet<>(clusteringComparator);
             for (int i = 0; i < numClusterings; i++)
             {
-                long clusteringSize = buffer.getInt();
-                ByteBuffer clusteringBytes = buffer.getPageRegion(buffer.position(), (int) clusteringSize);
-                buffer.position(buffer.position() + clusteringSize);
-                clusterings.add(Clustering.serializer.deserialize(clusteringBytes, 0, clusteringComparator.subtypes()));
+                int clusteringSize = buffer.getInt();
+                if (clusteringSize == ENTRY_STATIC_CLUSTERING_SENTINEL)
+                {
+                    clusterings.add(Clustering.STATIC_CLUSTERING);
+                } else
+                {
+                    ByteBuffer clusteringBytes = buffer.getPageRegion(buffer.position(), clusteringSize);
+                    buffer.position(buffer.position() + clusteringSize);
+                    clusterings.add(Clustering.serializer.deserialize(clusteringBytes, 0, clusteringComparator.subtypes()));
+                }
             }
 
             buffer.position(origPos);
@@ -377,7 +384,9 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
         private long clusteringSize(Clustering c)
         {
             // clustering size + clustering bytes
-            return Integer.BYTES + Clustering.serializer.serializedSize(c, 0, clusteringComparator.subtypes());
+
+            return Clustering.STATIC_CLUSTERING == c ? Integer.BYTES
+                                                     : Integer.BYTES + Clustering.serializer.serializedSize(c, 0, clusteringComparator.subtypes());
         }
 
         public void write(DataOutputPlus out) throws IOException
@@ -396,9 +405,16 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
                 out.writeInt(clusterings.size());
                 for (Clustering clustering : clusterings)
                 {
-                    // this downcast is safe because of ensureValidSize
-                    out.writeInt((int) Clustering.serializer.serializedSize(clustering, 0, clusteringComparator.subtypes()));
-                    Clustering.serializer.serialize(clustering, out, 0, clusteringComparator.subtypes());
+                    if (Clustering.STATIC_CLUSTERING == clustering)
+                    {
+                        // static clustering's can't be serialized so we indicate that we are pointing to one
+                        // with a flag.
+                        out.writeInt(ENTRY_STATIC_CLUSTERING_SENTINEL);
+                    } else
+                    {
+                        out.writeInt((int) Clustering.serializer.serializedSize(clustering, 0, clusteringComparator.subtypes()));
+                        Clustering.serializer.serialize(clustering, out, 0, clusteringComparator.subtypes());
+                    }
                 }
 
             }
