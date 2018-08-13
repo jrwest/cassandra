@@ -19,6 +19,7 @@ package org.apache.cassandra.index.sasi.memory;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.index.sasi.conf.ColumnIndex;
@@ -42,7 +43,7 @@ public class IndexMemtable
         this.index = MemIndex.forColumn(columnIndex.keyValidator(), columnIndex);
     }
 
-    public long index(DecoratedKey key, ByteBuffer value)
+    public long index(DecoratedKey key, Clustering clustering, ByteBuffer value)
     {
         if (value == null || value.remaining() == 0)
             return 0;
@@ -62,7 +63,7 @@ public class IndexMemtable
             }
         }
 
-        return index.add(key, value);
+        return index.add(key, clustering, value);
     }
 
     public RangeIterator<Long, IndexEntry> search(Expression expression)

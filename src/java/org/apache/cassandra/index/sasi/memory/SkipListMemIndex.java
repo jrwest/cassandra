@@ -22,6 +22,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.conf.ColumnIndex;
 import org.apache.cassandra.index.sasi.disk.IndexEntry;
@@ -34,7 +36,8 @@ public class SkipListMemIndex extends MemIndex
 {
     public static final int CSLM_OVERHEAD = 128; // average overhead of CSLM
 
-    private final ConcurrentSkipListMap<ByteBuffer, ConcurrentSkipListSet<DecoratedKey>> index;
+    private final ConcurrentSkipListMap<ByteBuffer,
+                                       ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>>> index;
 
     public SkipListMemIndex(AbstractType<?> keyValidator, ColumnIndex columnIndex)
     {
@@ -42,23 +45,35 @@ public class SkipListMemIndex extends MemIndex
         index = new ConcurrentSkipListMap<>(columnIndex.getValidator());
     }
 
-    public long add(DecoratedKey key, ByteBuffer value)
+    public long add(DecoratedKey key, Clustering clustering, ByteBuffer value)
     {
         long overhead = CSLM_OVERHEAD; // DKs are shared
-        ConcurrentSkipListSet<DecoratedKey> keys = index.get(value);
+        ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> entry = index.get(value);
 
-        if (keys == null)
+        if (entry == null)
         {
-            ConcurrentSkipListSet<DecoratedKey> newKeys = new ConcurrentSkipListSet<>(DecoratedKey.comparator);
-            keys = index.putIfAbsent(value, newKeys);
-            if (keys == null)
+            ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> newEntry = new ConcurrentSkipListMap<>(DecoratedKey.comparator);
+            entry = index.putIfAbsent(value, newEntry);
+            if (entry == null)
             {
                 overhead += CSLM_OVERHEAD + value.remaining();
-                keys = newKeys;
+                entry = newEntry;
             }
         }
 
-        keys.add(key);
+        ConcurrentSkipListSet<Clustering> clusterings = entry.get(key);
+        if (clusterings == null)
+        {
+            ConcurrentSkipListSet<Clustering> newClusterings = new ConcurrentSkipListSet<>(columnIndex.clusteringComparator());
+            clusterings = entry.putIfAbsent(key, newClusterings);
+            if (clusterings == null)
+            {
+                overhead += CSLM_OVERHEAD;
+                clusterings = newClusterings;
+            }
+        }
+
+        clusterings.add(clustering);
 
         return overhead;
     }
@@ -68,7 +83,7 @@ public class SkipListMemIndex extends MemIndex
         ByteBuffer min = expression.lower == null ? null : expression.lower.value;
         ByteBuffer max = expression.upper == null ? null : expression.upper.value;
 
-        SortedMap<ByteBuffer, ConcurrentSkipListSet<DecoratedKey>> search;
+        SortedMap<ByteBuffer, ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>>> search;
 
         if (min == null && max == null)
         {

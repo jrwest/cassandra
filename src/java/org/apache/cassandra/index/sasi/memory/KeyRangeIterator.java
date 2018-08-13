@@ -19,11 +19,14 @@ package org.apache.cassandra.index.sasi.memory;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 import com.carrotsearch.hppc.ObjectSet;
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.index.sasi.disk.TokenTreeBuilder;
@@ -39,10 +42,11 @@ public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
 {
     private final DKIterator iterator;
 
-    public KeyRangeIterator(ConcurrentSkipListSet<DecoratedKey> keys)
+    public KeyRangeIterator(ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> rows)
     {
-        super((Long) keys.first().getToken().getTokenValue(), (Long) keys.last().getToken().getTokenValue(), keys.size());
-        this.iterator = new DKIterator(keys.iterator());
+        super((Long) rows.firstEntry().getKey().getToken().getTokenValue(),
+              (Long) rows.lastEntry().getKey().getToken().getTokenValue(), rows.size());
+        this.iterator = new DKIterator(rows.entrySet().iterator());
     }
 
     protected IndexEntry computeNext()
@@ -68,16 +72,16 @@ public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
 
     private static class DKIterator extends AbstractIterator<DecoratedKey> implements PeekingIterator<DecoratedKey>
     {
-        private final Iterator<DecoratedKey> keys;
+        private final Iterator<Map.Entry<DecoratedKey, ConcurrentSkipListSet<Clustering>>> rows;
 
-        public DKIterator(Iterator<DecoratedKey> keys)
+        public DKIterator(Iterator<Map.Entry<DecoratedKey, ConcurrentSkipListSet<Clustering>>> keys)
         {
-            this.keys = keys;
+            this.rows = keys;
         }
 
         protected DecoratedKey computeNext()
         {
-            return keys.hasNext() ? keys.next() : endOfData();
+            return rows.hasNext() ? rows.next().getKey() : endOfData();
         }
     }
 

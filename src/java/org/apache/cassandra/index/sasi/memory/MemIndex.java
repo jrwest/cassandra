@@ -18,7 +18,10 @@
 package org.apache.cassandra.index.sasi.memory;
 
 import java.nio.ByteBuffer;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.conf.ColumnIndex;
 import org.apache.cassandra.index.sasi.disk.IndexEntry;
@@ -37,7 +40,7 @@ public abstract class MemIndex
         this.columnIndex = columnIndex;
     }
 
-    public abstract long add(DecoratedKey key, ByteBuffer value);
+    public abstract long add(DecoratedKey key, Clustering clustering, ByteBuffer value);
     public abstract RangeIterator<Long, IndexEntry> search(Expression expression);
 
     public static MemIndex forColumn(AbstractType<?> keyValidator, ColumnIndex columnIndex)

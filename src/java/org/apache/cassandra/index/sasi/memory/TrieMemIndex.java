@@ -20,8 +20,12 @@ package org.apache.cassandra.index.sasi.memory;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
+import com.datastax.driver.core.Cluster;
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.disk.IndexEntry;
 import org.apache.cassandra.schema.ColumnMetadata;
@@ -59,11 +63,11 @@ public class TrieMemIndex extends MemIndex
         switch (columnIndex.getMode().mode)
         {
             case CONTAINS:
-                index = new ConcurrentSuffixTrie(columnIndex.getDefinition());
+                index = new ConcurrentSuffixTrie(columnIndex.clusteringComparator(), columnIndex.getDefinition());
                 break;
 
             case PREFIX:
-                index = new ConcurrentPrefixTrie(columnIndex.getDefinition());
+                index = new ConcurrentPrefixTrie(columnIndex.clusteringComparator(), columnIndex.getDefinition());
                 break;
 
             default:
@@ -71,7 +75,7 @@ public class TrieMemIndex extends MemIndex
         }
     }
 
-    public long add(DecoratedKey key, ByteBuffer value)
+    public long add(DecoratedKey key, Clustering clustering, ByteBuffer value)
     {
         AbstractAnalyzer analyzer = columnIndex.getAnalyzer();
         analyzer.reset(value.duplicate());
@@ -91,7 +95,7 @@ public class TrieMemIndex extends MemIndex
                 continue;
             }
 
-            size += index.add(columnIndex.getValidator().getString(term), key);
+            size += index.add(columnIndex.getValidator().getString(term), key, clustering);
         }
 
         return size;
@@ -106,29 +110,43 @@ public class TrieMemIndex extends MemIndex
     {
         public static final SizeEstimatingNodeFactory NODE_FACTORY = new SizeEstimatingNodeFactory();
 
+        protected final ClusteringComparator clusteringComparator;
         protected final ColumnMetadata definition;
 
-        public ConcurrentTrie(ColumnMetadata column)
+        public ConcurrentTrie(ClusteringComparator comparator, ColumnMetadata column)
         {
+            clusteringComparator = comparator;
             definition = column;
         }
 
-        public long add(String value, DecoratedKey key)
+        public long add(String value, DecoratedKey key, Clustering clustering)
         {
             long overhead = CSLM_OVERHEAD;
-            ConcurrentSkipListSet<DecoratedKey> keys = get(value);
-            if (keys == null)
+            ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> entry = get(value);
+            if (entry == null)
             {
-                ConcurrentSkipListSet<DecoratedKey> newKeys = new ConcurrentSkipListSet<>(DecoratedKey.comparator);
-                keys = putIfAbsent(value, newKeys);
-                if (keys == null)
+                ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> newKeys = new ConcurrentSkipListMap<>(DecoratedKey.comparator);
+                entry = putIfAbsent(value, newKeys);
+                if (entry == null)
                 {
                     overhead += CSLM_OVERHEAD + value.length();
-                    keys = newKeys;
+                    entry = newKeys;
                 }
             }
 
-            keys.add(key);
+            ConcurrentSkipListSet<Clustering> clusterings = entry.get(key);
+            if (clusterings == null)
+            {
+                ConcurrentSkipListSet<Clustering> newClusterings = new ConcurrentSkipListSet<>(clusteringComparator);
+                clusterings = entry.putIfAbsent(key, newClusterings);
+                if (clusterings == null)
+                {
+                    overhead += CSLM_OVERHEAD;
+                    clusterings = newClusterings;
+                }
+            }
+
+            clusterings.add(clustering);
 
             // get and reset new memory size allocated by current thread
             overhead += NODE_FACTORY.currentUpdateSize();
@@ -141,10 +159,11 @@ public class TrieMemIndex extends MemIndex
         {
             ByteBuffer prefix = expression.lower == null ? null : expression.lower.value;
 
-            Iterable<ConcurrentSkipListSet<DecoratedKey>> search = search(expression.getOp(), definition.cellValueType().getString(prefix));
+            Iterable<ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>>> search = search(expression.getOp(),
+                                                                                                             definition.cellValueType().getString(prefix));
 
             RangeUnionIterator.Builder<Long, IndexEntry> builder = RangeUnionIterator.builder();
-            for (ConcurrentSkipListSet<DecoratedKey> keys : search)
+            for (ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> keys : search)
             {
                 if (!keys.isEmpty())
                     builder.add(new KeyRangeIterator(keys));
@@ -153,38 +172,39 @@ public class TrieMemIndex extends MemIndex
             return builder.build();
         }
 
-        protected abstract ConcurrentSkipListSet<DecoratedKey> get(String value);
-        protected abstract Iterable<ConcurrentSkipListSet<DecoratedKey>> search(Op operator, String value);
-        protected abstract ConcurrentSkipListSet<DecoratedKey> putIfAbsent(String value, ConcurrentSkipListSet<DecoratedKey> key);
+        protected abstract ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> get(String value);
+        protected abstract Iterable<ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>>> search(Op operator, String value);
+        protected abstract ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> putIfAbsent(String value, ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> key);
     }
 
     protected static class ConcurrentPrefixTrie extends ConcurrentTrie
     {
-        private final ConcurrentRadixTree<ConcurrentSkipListSet<DecoratedKey>> trie;
+        private final ConcurrentRadixTree<ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>>> trie;
 
-        private ConcurrentPrefixTrie(ColumnMetadata column)
+        private ConcurrentPrefixTrie(ClusteringComparator clusteringComparator, ColumnMetadata column)
         {
-            super(column);
+            super(clusteringComparator, column);
             trie = new ConcurrentRadixTree<>(NODE_FACTORY);
         }
 
-        public ConcurrentSkipListSet<DecoratedKey> get(String value)
+        public ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> get(String value)
         {
             return trie.getValueForExactKey(value);
         }
 
-        public ConcurrentSkipListSet<DecoratedKey> putIfAbsent(String value, ConcurrentSkipListSet<DecoratedKey> newKeys)
+        public ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> putIfAbsent(String value,
+                                                                                                  ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> newEntry)
         {
-            return trie.putIfAbsent(value, newKeys);
+            return trie.putIfAbsent(value, newEntry);
         }
 
-        public Iterable<ConcurrentSkipListSet<DecoratedKey>> search(Op operator, String value)
+        public Iterable<ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>>> search(Op operator, String value)
         {
             switch (operator)
             {
                 case EQ:
                 case MATCH:
-                    ConcurrentSkipListSet<DecoratedKey> keys = trie.getValueForExactKey(value);
+                    ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> keys = trie.getValueForExactKey(value);
                     return keys == null ? Collections.emptyList() : Collections.singletonList(keys);
 
                 case PREFIX:
@@ -198,31 +218,32 @@ public class TrieMemIndex extends MemIndex
 
     protected static class ConcurrentSuffixTrie extends ConcurrentTrie
     {
-        private final ConcurrentSuffixTree<ConcurrentSkipListSet<DecoratedKey>> trie;
+        private final ConcurrentSuffixTree<ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>>> trie;
 
-        private ConcurrentSuffixTrie(ColumnMetadata column)
+        private ConcurrentSuffixTrie(ClusteringComparator clusteringComparator, ColumnMetadata column)
         {
-            super(column);
+            super(clusteringComparator, column);
             trie = new ConcurrentSuffixTree<>(NODE_FACTORY);
         }
 
-        public ConcurrentSkipListSet<DecoratedKey> get(String value)
+        public ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> get(String value)
         {
             return trie.getValueForExactKey(value);
         }
 
-        public ConcurrentSkipListSet<DecoratedKey> putIfAbsent(String value, ConcurrentSkipListSet<DecoratedKey> newKeys)
+        public ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> putIfAbsent(String value,
+                                                                                                  ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> newEntry)
         {
-            return trie.putIfAbsent(value, newKeys);
+            return trie.putIfAbsent(value, newEntry);
         }
 
-        public Iterable<ConcurrentSkipListSet<DecoratedKey>> search(Op operator, String value)
+        public Iterable<ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>>> search(Op operator, String value)
         {
             switch (operator)
             {
                 case EQ:
                 case MATCH:
-                    ConcurrentSkipListSet<DecoratedKey> keys = trie.getValueForExactKey(value);
+                    ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> keys = trie.getValueForExactKey(value);
                     return keys == null ? Collections.emptyList() : Collections.singletonList(keys);
 
                 case SUFFIX:
