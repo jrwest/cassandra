@@ -27,6 +27,7 @@ import java.util.concurrent.*;
 
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.db.DecoratedKey;
@@ -130,7 +131,7 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
             if (index == null)
                 throw new IllegalArgumentException("No index exists for column " + column.name.toString());
 
-            index.add(value.duplicate(), currentKey, currentKeyPosition);
+            index.add(value.duplicate(), currentKey, currentKeyPosition, row.clustering());
         });
     }
 
@@ -198,7 +199,7 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
             this.currentBuilder = newIndexBuilder();
         }
 
-        public void add(ByteBuffer term, DecoratedKey key, long keyPosition)
+        public void add(ByteBuffer term, DecoratedKey key, long keyPosition, Clustering clustering)
         {
             if (term.remaining() == 0)
                 return;
@@ -236,7 +237,7 @@ public class PerSSTableIndexWriter implements SSTableFlushObserver
                     }
                 }
 
-                currentBuilder.add(token, key, keyPosition);
+                currentBuilder.add(token, key, keyPosition, clustering);
                 isAdded = true;
             }
 

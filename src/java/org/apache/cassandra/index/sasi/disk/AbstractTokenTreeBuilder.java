@@ -61,6 +61,8 @@ public abstract class AbstractTokenTreeBuilder implements TokenTreeBuilder
         add(other.iterator());
     }
 
+    abstract void add(Iterator<Pair<Long, Entries>> data);
+
     public TokenTreeBuilder finish()
     {
         if (root == null)

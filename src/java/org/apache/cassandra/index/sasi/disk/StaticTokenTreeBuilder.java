@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.SortedMap;
 
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.index.sasi.utils.CombinedTerm;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
@@ -66,7 +67,7 @@ public class StaticTokenTreeBuilder extends AbstractTokenTreeBuilder
         dataLayerSize = 0;
     }
 
-    public void add(Long token, long partitionKeyPosition)
+    public void add(Long token, long partitionKeyPosition, Clustering clustering)
     {
         throw new UnsupportedOperationException();
     }

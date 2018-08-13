@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.plan.Expression.Op;
@@ -172,7 +173,7 @@ public class OnDiskIndexBuilder
         this.marksPartials = marksPartials;
     }
 
-    public OnDiskIndexBuilder add(ByteBuffer term, DecoratedKey key, long keyPosition)
+    public OnDiskIndexBuilder add(ByteBuffer term, DecoratedKey key, long keyPosition, Clustering clustering)
     {
         if (term.remaining() >= MAX_TERM_SIZE)
         {
@@ -192,7 +193,7 @@ public class OnDiskIndexBuilder
             estimatedBytes += 64 + 48 + term.remaining();
         }
 
-        tokens.add((Long) key.getToken().getTokenValue(), keyPosition);
+        tokens.add((Long) key.getToken().getTokenValue(), keyPosition, clustering);
 
         // calculate key range (based on actual key values) for current index
         minKey = (minKey == null || keyComparator.compare(minKey, key.getKey()) > 0) ? key.getKey() : minKey;

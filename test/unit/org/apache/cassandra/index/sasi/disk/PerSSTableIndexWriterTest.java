@@ -245,7 +245,10 @@ public class PerSSTableIndexWriterTest extends SchemaLoader
             for (Integer keyPos : value.getValue())
             {
                 ByteBuffer key = ByteBufferUtil.bytes(String.format("key%06d", keyPos));
-                index.add(term, metadata.partitioner.decorateKey(key), ThreadLocalRandom.current().nextInt(Integer.MAX_VALUE - 1));
+                index.add(term,
+                          metadata.partitioner.decorateKey(key),
+                          ThreadLocalRandom.current().nextInt(Integer.MAX_VALUE - 1),
+                          Clustering.EMPTY);
             }
         }
     }

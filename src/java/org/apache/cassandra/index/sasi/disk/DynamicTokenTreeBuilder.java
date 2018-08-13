@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AbstractIterator;
@@ -47,13 +48,13 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
         add(data);
     }
 
-    public void add(Long token, long partitionKeyPosition)
+    public void add(Long token, long partitionKeyPosition, Clustering clustering)
     {
         Entries found = tokens.get(token);
         if (found == null)
             tokens.put(token, (found = new Entries(clusteringComparator)));
 
-        found.add(partitionKeyPosition);
+        found.add(partitionKeyPosition, clustering);
     }
 
     public void add(Iterator<Pair<Long, Entries>> data)
@@ -70,7 +71,7 @@ public class DynamicTokenTreeBuilder extends AbstractTokenTreeBuilder
         }
     }
 
-    public void add(SortedMap<Long, Entries> data)
+    protected void add(SortedMap<Long, Entries> data)
     {
         for (Map.Entry<Long, Entries> newEntries : data.entrySet())
         {

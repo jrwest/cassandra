@@ -81,9 +81,7 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
     }
 
     ClusteringComparator clusteringComparator();
-    void add(Long token, long partitionKeyPosition);
-    void add(SortedMap<Long, Entries> data);
-    void add(Iterator<Pair<Long, Entries>> data);
+    void add(Long token, long partitionKeyPosition, Clustering clustering);
     void add(TokenTreeBuilder ttb);
 
     boolean isEmpty();
