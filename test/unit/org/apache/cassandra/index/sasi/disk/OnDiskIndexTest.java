@@ -764,12 +764,12 @@ public class OnDiskIndexTest
         while (tokens.hasNext())
         {
             IndexEntry entry = tokens.next();
-            Iterator<DecoratedKey> keys = entry.iterator();
+            Iterator<IndexEntry.EntryData> data = entry.iterator();
 
             // each of the values should have exactly a single key
-            Assert.assertTrue(keys.hasNext());
-            keys.next();
-            Assert.assertFalse(keys.hasNext());
+            Assert.assertTrue(data.hasNext());
+            data.next();
+            Assert.assertFalse(data.hasNext());
 
             // and it's last should always smaller than current
             if (lastToken != null)
@@ -834,8 +834,8 @@ public class OnDiskIndexTest
 
         while (results.hasNext())
         {
-            for (DecoratedKey key : results.next())
-                keys.add(key);
+            for (IndexEntry.EntryData entry : results.next())
+                keys.add(entry.key);
         }
 
         return keys;

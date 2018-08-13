@@ -20,12 +20,13 @@ package org.apache.cassandra.index.sasi.memory;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.SortedSet;
+import java.util.NavigableMap;
+import java.util.NavigableSet;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
-import com.carrotsearch.hppc.ObjectSet;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.disk.IndexEntry;
@@ -34,19 +35,18 @@ import org.apache.cassandra.index.sasi.utils.AbstractIterator;
 import org.apache.cassandra.index.sasi.utils.CombinedValue;
 import org.apache.cassandra.index.sasi.utils.RangeIterator;
 
-import com.carrotsearch.hppc.LongOpenHashSet;
-import com.carrotsearch.hppc.LongSet;
+import com.google.common.collect.Iterators;
 import com.google.common.collect.PeekingIterator;
 
 public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
 {
-    private final DKIterator iterator;
+    private final PeekingIterator<Map.Entry<DecoratedKey, ConcurrentSkipListSet<Clustering>>> iterator;
 
     public KeyRangeIterator(ConcurrentSkipListMap<DecoratedKey, ConcurrentSkipListSet<Clustering>> rows)
     {
         super((Long) rows.firstEntry().getKey().getToken().getTokenValue(),
               (Long) rows.lastEntry().getKey().getToken().getTokenValue(), rows.size());
-        this.iterator = new DKIterator(rows.entrySet().iterator());
+        this.iterator = Iterators.peekingIterator(rows.entrySet().iterator());
     }
 
     protected IndexEntry computeNext()
@@ -58,7 +58,7 @@ public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
     {
         while (iterator.hasNext())
         {
-            DecoratedKey key = iterator.peek();
+            DecoratedKey key = iterator.peek().getKey();
             if (Long.compare((long) key.getToken().getTokenValue(), nextToken) >= 0)
                 break;
 
@@ -70,32 +70,15 @@ public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
     public void close() throws IOException
     {}
 
-    private static class DKIterator extends AbstractIterator<DecoratedKey> implements PeekingIterator<DecoratedKey>
-    {
-        private final Iterator<Map.Entry<DecoratedKey, ConcurrentSkipListSet<Clustering>>> rows;
-
-        public DKIterator(Iterator<Map.Entry<DecoratedKey, ConcurrentSkipListSet<Clustering>>> keys)
-        {
-            this.rows = keys;
-        }
-
-        protected DecoratedKey computeNext()
-        {
-            return rows.hasNext() ? rows.next().getKey() : endOfData();
-        }
-    }
-
     private static class InMemoryIndexEntry extends IndexEntry
     {
-        private final SortedSet<DecoratedKey> keys;
+        private final NavigableMap<DecoratedKey, NavigableSet<Clustering>> rows;
 
-        public InMemoryIndexEntry(final DecoratedKey key)
+        public InMemoryIndexEntry(final Map.Entry<DecoratedKey, ConcurrentSkipListSet<Clustering>> rows)
         {
-            super((long) key.getToken().getTokenValue());
-
-            keys = new TreeSet<DecoratedKey>(DecoratedKey.comparator)
-            {{
-                add(key);
+            super((long) rows.getKey().getToken().getTokenValue());
+            this.rows = new TreeMap<DecoratedKey, NavigableSet<Clustering>>(DecoratedKey.comparator) {{
+                put(rows.getKey(), new TreeSet<>(rows.getValue()));
             }};
         }
 
@@ -113,20 +96,19 @@ public class KeyRangeIterator extends RangeIterator<Long, IndexEntry>
             IndexEntry o = (IndexEntry) other;
             assert o.get().equals(token);
 
-            if (o instanceof InMemoryIndexEntry)
-            {
-                keys.addAll(((InMemoryIndexEntry) o).keys);
-            }
-            else
-            {
-                for (DecoratedKey key : o)
-                    keys.add(key);
-            }
+            o.forEach(this::mergeEntryData);
         }
 
-        public Iterator<DecoratedKey> iterator()
+        public Iterator<EntryData> iterator()
         {
-            return keys.iterator();
+            return Iterators.transform(rows.entrySet().iterator(), e -> new EntryData(e.getKey(), e.getValue()));
+        }
+
+        protected void mergeEntryData(EntryData ed)
+        {
+            NavigableSet<Clustering> clusterings = rows.putIfAbsent(ed.key, ed.clusterings());
+            if (clusterings != null)
+                clusterings.addAll(ed.clusterings());
         }
     }
 }

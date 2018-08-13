@@ -92,7 +92,7 @@ public class LongIterator extends RangeIterator<Long, IndexEntry>
         }
 
         @Override
-        public Iterator<DecoratedKey> iterator()
+        public Iterator<EntryData> iterator()
         {
             return Collections.emptyIterator();
         }

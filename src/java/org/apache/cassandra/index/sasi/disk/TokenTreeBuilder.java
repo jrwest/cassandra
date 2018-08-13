@@ -317,6 +317,11 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
             return partitionOffset;
         }
 
+        public NavigableSet<Clustering> clusterings()
+        {
+            return clusterings;
+        }
+
         /**
          * @return {@link OptionalLong#empty()} if the data represented by this entry requires space in the data layer
          * of the tree. Otherwise, return a {@link OptionalLong}, whose value is the offset of the partition key in the

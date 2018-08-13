@@ -387,8 +387,8 @@ public class TokenTreeTest
             }
 
             final Set<Long> offsets = new TreeSet<>();
-            for (DecoratedKey key : entryA)
-                 offsets.add(LongType.instance.compose(key.getKey()));
+            for (IndexEntry.EntryData entry : entryA)
+                 offsets.add(LongType.instance.compose(entry.key.getKey()));
 
             Set<Long> expected = new TreeSet<>();
             {
@@ -636,13 +636,13 @@ public class TokenTreeTest
         }
 
         @Override
-        public Iterator<DecoratedKey> iterator()
+        public Iterator<EntryData> iterator()
         {
             List<DecoratedKey> keys = new ArrayList<>(offsets.size());
             for (TokenTreeBuilder.Entry offset : offsets)
                  keys.add(dk(offset.partitionOffset()));
 
-            return keys.iterator();
+            return Iterators.transform(keys.iterator(), k -> new EntryData(k, null));
         }
     }
 
@@ -658,8 +658,8 @@ public class TokenTreeTest
     private static Set<DecoratedKey> convert(IndexEntry results)
     {
         Set<DecoratedKey> keys = new HashSet<>();
-        for (DecoratedKey key : results)
-            keys.add(key);
+        for (IndexEntry.EntryData entry : results)
+            keys.add(entry.key);
 
         return keys;
     }

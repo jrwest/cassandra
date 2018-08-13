@@ -354,7 +354,7 @@ public class TokenTree
     public static class OnDiskIndexEntry extends IndexEntry
     {
         private final Set<TokenInfo> info = new HashSet<>(2);
-        private final Set<DecoratedKey> loadedKeys = new TreeSet<>(DecoratedKey.comparator);
+        private final Set<EntryData> loadedEntries = new TreeSet<>(EntryData.comparator);
 
         public OnDiskIndexEntry(ClusteringComparator clusteringComparator, MappedBuffer buffer,
                                 long position, short leafSize, long dataStart, Function<Long, DecoratedKey> keyFetcher)
@@ -378,35 +378,43 @@ public class TokenTree
             }
             else
             {
-                Iterators.addAll(loadedKeys, o.iterator());
+                Iterators.addAll(loadedEntries, o.iterator());
             }
         }
 
-        public Iterator<DecoratedKey> iterator()
+        public Iterator<EntryData> iterator()
         {
-            List<Iterator<DecoratedKey>> keys = new ArrayList<>(info.size());
+            List<Iterator<EntryData>> entries = new ArrayList<>(info.size());
 
             for (TokenInfo i : info)
-                keys.add(i.iterator());
+                entries.add(i.iterator());
 
-            if (!loadedKeys.isEmpty())
-                keys.add(loadedKeys.iterator());
+            if (!loadedEntries.isEmpty())
+                entries.add(loadedEntries.iterator());
 
-            return MergeIterator.get(keys, DecoratedKey.comparator, new MergeIterator.Reducer<DecoratedKey, DecoratedKey>()
+            return MergeIterator.get(entries, EntryData.comparator, new MergeIterator.Reducer<EntryData, EntryData>()
             {
-                DecoratedKey reduced = null;
+                private EntryData reduced = null;
 
                 public boolean trivialReduceIsTrivial()
                 {
                     return true;
                 }
 
-                public void reduce(int idx, DecoratedKey current)
+                protected void onKeyChange()
                 {
-                    reduced = current;
+                    reduced = null;
                 }
 
-                protected DecoratedKey getReduced()
+                public void reduce(int idx, EntryData current)
+                {
+                    if (null == reduced)
+                        reduced = current;
+                    else
+                        reduced.addClusterings(current);
+                }
+
+                protected EntryData getReduced()
                 {
                     return reduced;
                 }
@@ -462,9 +470,9 @@ public class TokenTree
             this.leafSize = leafSize;
         }
 
-        public Iterator<DecoratedKey> iterator()
+        public Iterator<IndexEntry.EntryData> iterator()
         {
-            return new KeyIterator(keyFetcher, fetchEntries());
+            return new EntryDataIterator(keyFetcher, fetchEntries());
         }
 
         public int hashCode()
@@ -546,23 +554,25 @@ public class TokenTree
         }
     }
 
-    private static class KeyIterator extends AbstractIterator<DecoratedKey>
+    private static class EntryDataIterator extends AbstractIterator<IndexEntry.EntryData>
     {
         private final Function<Long, DecoratedKey> keyFetcher;
-        private final Iterator<ObjectCursor<TokenTreeBuilder.Entry>> entries;
+        private final Iterator<ObjectCursor<Entry>> entries;
 
-        public KeyIterator(Function<Long, DecoratedKey> keyFetcher, TokenTreeBuilder.Entries entries)
+        public EntryDataIterator(Function<Long, DecoratedKey> keyFetcher, TokenTreeBuilder.Entries entries)
         {
             this.keyFetcher = keyFetcher;
             this.entries = entries.getEntries().iterator();
         }
 
-        public DecoratedKey computeNext()
+        public IndexEntry.EntryData computeNext()
         {
             if (!entries.hasNext())
                 return endOfData();
 
-            return keyFetcher.apply(entries.next().value.partitionOffset());
+            ObjectCursor<Entry> es = entries.next();
+
+            return new IndexEntry.EntryData(keyFetcher.apply(es.value.partitionOffset()), es.value.clusterings());
         }
     }
 }

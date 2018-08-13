@@ -75,7 +75,7 @@ public class QueryPlan
         private final QueryController controller;
         private final ReadExecutionController executionController;
 
-        private Iterator<DecoratedKey> currentKeys = null;
+        private Iterator<IndexEntry.EntryData> currentEntries = null;
 
         public ResultIterator(Operation operationTree, QueryController controller, ReadExecutionController executionController)
         {
@@ -94,26 +94,26 @@ public class QueryPlan
 
             for (;;)
             {
-                if (currentKeys == null || !currentKeys.hasNext())
+                if (currentEntries == null || !currentEntries.hasNext())
                 {
                     if (!operationTree.hasNext())
                          return endOfData();
 
                     IndexEntry entry = operationTree.next();
-                    currentKeys = entry.iterator();
+                    currentEntries = entry.iterator();
                 }
 
-                while (currentKeys.hasNext())
+                while (currentEntries.hasNext())
                 {
-                    DecoratedKey key = currentKeys.next();
+                    IndexEntry.EntryData entry = currentEntries.next();
 
-                    if (!keyRange.right.isMinimum() && keyRange.right.compareTo(key) < 0)
+                    if (!keyRange.right.isMinimum() && keyRange.right.compareTo(entry.key) < 0)
                         return endOfData();
 
-                    if (!keyRange.inclusiveLeft() && key.compareTo(keyRange.left) == 0)
+                    if (!keyRange.inclusiveLeft() && entry.key.compareTo(keyRange.left) == 0)
                         continue;
 
-                    try (UnfilteredRowIterator partition = controller.getPartition(key, executionController))
+                    try (UnfilteredRowIterator partition = controller.getPartition(entry, executionController))
                     {
                         Row staticRow = partition.staticRow();
                         List<Unfiltered> clusters = new ArrayList<>();

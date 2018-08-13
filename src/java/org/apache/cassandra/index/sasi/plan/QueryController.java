@@ -101,21 +101,11 @@ public class QueryController
     }
 
 
-    public UnfilteredRowIterator getPartition(DecoratedKey key, ReadExecutionController executionController)
+    public UnfilteredRowIterator getPartition(IndexEntry.EntryData data, ReadExecutionController executionController)
     {
-        if (key == null)
-            throw new NullPointerException();
         try
         {
-            SinglePartitionReadCommand partition = SinglePartitionReadCommand.create(cfs.metadata(),
-                                                                                     command.nowInSec(),
-                                                                                     command.columnFilter(),
-                                                                                     command.rowFilter().withoutExpressions(),
-                                                                                     DataLimits.NONE,
-                                                                                     key,
-                                                                                     command.clusteringIndexFilter(key));
-
-            return partition.queryMemtableAndDisk(cfs, executionController);
+            return data.readCommand(cfs.metadata(), command).queryMemtableAndDisk(cfs, executionController);
         }
         finally
         {
