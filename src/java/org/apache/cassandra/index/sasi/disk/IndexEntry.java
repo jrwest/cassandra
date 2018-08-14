@@ -20,6 +20,7 @@ package org.apache.cassandra.index.sasi.disk;
 import java.util.Comparator;
 import java.util.NavigableSet;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 import com.google.common.primitives.Longs;
 
@@ -83,7 +84,7 @@ public abstract class IndexEntry implements CombinedValue<Long>, Iterable<IndexE
                                                       PartitionRangeReadCommand command)
         {
             ClusteringIndexFilter filter = readsWholePartition() ? new ClusteringIndexSliceFilter(Slices.ALL, false)
-                                                                 : new ClusteringIndexNamesFilter(clusterings, false);
+                                                                 : new ClusteringIndexNamesFilter(selectableClusterings(command), false);
 
             return SinglePartitionReadCommand.create(metadata,
                                                      command.nowInSec(),
@@ -114,6 +115,15 @@ public abstract class IndexEntry implements CombinedValue<Long>, Iterable<IndexE
         {
             return clusterings == null ||
                    clusterings.stream().anyMatch(c -> c.kind() == ClusteringPrefix.Kind.STATIC_CLUSTERING);
+        }
+
+        private NavigableSet<Clustering> selectableClusterings(PartitionRangeReadCommand command)
+        {
+            return clusterings.stream()
+                              .filter(c -> command.selectsClustering(key, c))
+                              .collect(() -> new TreeSet<>(clusterings.comparator()),
+                                       (s,c) -> s.add(c),
+                                       (s1,s2) -> s1.addAll(s2));
         }
     }
 }
