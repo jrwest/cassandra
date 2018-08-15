@@ -116,7 +116,7 @@ public interface TokenTreeBuilder extends Iterable<Pair<Long, TokenTreeBuilder.E
                 // tracks serialized size assuming isPackable may become false in the future, otherwise
                 // know we know if isPackable = true, serializedSize = 0, depsite what the value of the variable
                 // actually is
-                serializedSize = entryPackable ? ENTRY_UNPACKED_SIZE : entry.value.serializedSize();
+                serializedSize += entryPackable ? ENTRY_UNPACKED_SIZE : entry.value.serializedSize();
                 isPackable &= entryPackable;
             }
         }
