@@ -132,7 +132,7 @@ public class SimpleClient implements Closeable
 
         if (useChecksums)
         {
-            Optional<Compressor> compressor = useCompression ? Optional.of(LZ4Compressor.INSTANCE) : Optional.empty();
+            Compressor compressor = useCompression ? LZ4Compressor.INSTANCE : null;
             connection.setTransformer(ChecksummingTransformer.getTransformer(ChecksumType.CRC32, compressor));
         }
         else if (useCompression)

@@ -158,7 +158,7 @@ public class Client extends SimpleClient
             }
             else
             {
-                connection.setTransformer(ChecksummingTransformer.getTransformer(checksumType, Optional.ofNullable(compressor)));
+                connection.setTransformer(ChecksummingTransformer.getTransformer(checksumType, compressor));
             }
 
             return new StartupMessage(options);

@@ -99,12 +99,11 @@ public class ChecksummingTransformer implements FrameBodyTransformer
     private final Compressor compressor;
     private final ChecksumType checksum;
 
-    public static ChecksummingTransformer getTransformer(ChecksumType checksumType, Optional<Compressor> compressor)
+    public static ChecksummingTransformer getTransformer(ChecksumType checksumType, Compressor compressor)
     {
         return new ChecksummingTransformer(checksumType,
                                            DatabaseDescriptor.getNativeTransportFrameBlockSize(),
-                                           compressor.orElse(null)
-        );
+                                           compressor);
     }
 
     ChecksummingTransformer(ChecksumType checksumType, int blockSize, Compressor compressor)
