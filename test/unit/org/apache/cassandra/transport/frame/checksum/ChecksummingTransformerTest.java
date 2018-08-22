@@ -23,10 +23,12 @@ import java.util.EnumSet;
 import java.util.Random;
 
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.transport.Frame;
 import org.apache.cassandra.transport.frame.compress.Compressor;
 import org.apache.cassandra.transport.frame.compress.LZ4Compressor;
@@ -41,6 +43,13 @@ public class ChecksummingTransformerTest
     private static final Random RANDOM = new Random();
     private static final int DEFAULT_BLOCK_SIZE = 1 << 15;
     private static final EnumSet<Frame.Header.Flag> FLAGS = EnumSet.of(Frame.Header.Flag.COMPRESSED, Frame.Header.Flag.CHECKSUMMED);
+
+    @BeforeClass
+    public static void init()
+    {
+        // required as static ChecksummingTransformer instances read default block size from config
+        DatabaseDescriptor.clientInitialization();
+    }
 
     @Test
     public void roundTripSmall() throws IOException
