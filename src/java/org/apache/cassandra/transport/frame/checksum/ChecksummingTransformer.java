@@ -33,13 +33,6 @@ import org.apache.cassandra.utils.ChecksumType;
 /**
  * Provides a format that implements chunking and checksumming logic
  * that maybe used in conjunction with a frame Compressor if required
- * necessary.
- * <p>
- * Implementations should implement the required abstract methods that
- * do nothing but take some input bytes, compress or decompress them,
- * and return it. The chunking and checksuming is taken care of in
- * in this class and is designed to not to need to be modified in any
- * way to change the underlying compresion algorithm being used.
  * <p>
  * <strong>1.1. Checksummed/Compression Serialized Format</strong>
  * <p>
@@ -84,7 +77,7 @@ import org.apache.cassandra.utils.ChecksumType;
  * <p>
  * <strong>1.2. Checksum Compression Description</strong>
  * <p>
- * The entire compressed payload is broken into n compressed chunks each with a checksum:
+ * The entire cpayload is broken into n chunks each with a pair of checksums:
  * <ul>
  * <li>[int]: compressed length of serialized bytes for this chunk (e.g. the length post compression)
  * <li>[int]: expected length of the decompressed bytes (e.g. the length after decompression)
@@ -126,15 +119,6 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         return null == compressor ? CHECKSUMS_ONLY : CHECKSUMS_AND_COMPRESSION;
     }
 
-    /**
-     * Compresses and consumes the entire length from the starting offset or reader index to the length
-     * in a serialization format as described in {@link ChecksummingTransformer}
-     * adding checksums and chunking to the frame body
-
-     * @param inputBuf the input/source buffer of what we are going to compress
-     * @return a single ByteBuf with all the compressed bytes serialized in the compressed/chunk'ed/checksum'ed format
-     * @throws IOException if we fail while compressing the input blocks or read from the inputBuf itself
-     */
     public ByteBuf transformOutbound(ByteBuf inputBuf) throws IOException
     {
         // be pessimistic about life and assume the compressed output will be the same size as the input bytes
@@ -160,7 +144,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         {
             int lengthToRead = Math.min(blockSize, readableBytes);
             inputBuf.readBytes(inBuf, 0, lengthToRead);
-            int written = compress(inBuf, lengthToRead, outBuf);
+            int written = maybeCompress(inBuf, lengthToRead, outBuf);
             int uncompressedChunkChecksum = (int) checksum.of(inBuf, 0, lengthToRead);
 
             if (ret.writableBytes() < (CHUNK_HEADER_OVERHEAD + written))
@@ -196,12 +180,6 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         return ret;
     }
 
-    /**
-     * Decompresses the given inputBuf in one go, where inputBuf is serialized in the checksum'ed chunked format specified
-     * @param inputBuf the entire compressed value serialized in the chunked and checksum'ed format described
-     * @return the actual resulting decompressed bytes for usage (free of any serialization etc.)
-     * @throws IOException if we failed to decompress or match a checksum check on a chunk
-     */
     public ByteBuf transformInbound(ByteBuf inputBuf, EnumSet<Frame.Header.Flag> flags) throws IOException
     {
         int numChunks = readUnsignedShort(inputBuf);
@@ -244,7 +222,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
             // get the compressed bytes for this chunk
             inputBuf.readBytes(buf, 0, compressedLength);
             // decompress it
-            byte[] decompressedChunk = decompress(buf, compressedLength, decompressedLength, flags);
+            byte[] decompressedChunk = maybeDecompress(buf, compressedLength, decompressedLength, flags);
             // add the decompressed bytes into the ret buf
             System.arraycopy(decompressedChunk, 0, retBuf, currentPosition, decompressedLength);
             currentPosition += decompressedLength;
@@ -271,7 +249,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
 
     }
 
-    private int compress(byte[] input, int length, byte[] output) throws IOException
+    private int maybeCompress(byte[] input, int length, byte[] output) throws IOException
     {
         if (null == compressor)
         {
@@ -282,7 +260,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         return compressor.compress(input, 0, length, output, 0);
     }
 
-    private byte[] decompress(byte[] input, int length, int expectedLength, EnumSet<Frame.Header.Flag> flags) throws IOException
+    private byte[] maybeDecompress(byte[] input, int length, int expectedLength, EnumSet<Frame.Header.Flag> flags) throws IOException
     {
         if (null == compressor || !flags.contains(Frame.Header.Flag.COMPRESSED))
             return input;

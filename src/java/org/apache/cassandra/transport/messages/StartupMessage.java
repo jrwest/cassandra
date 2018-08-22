@@ -98,7 +98,7 @@ public class StartupMessage extends Message.Request
         {
             if (!connection.getVersion().supportsChecksums())
                 throw new ProtocolException(String.format("Invalid message flag. Protocol version %s does not support frame body checksums", connection.getVersion().toString()));
-            connection.setTransformer(ChecksummingTransformer.getTransformer(checksumType.get(), compressor));
+            connection.setTransformer(ChecksummingTransformer.getTransformer(checksumType.get(), compressor.orElse(null)));
         }
         else if (compressor.isPresent())
         {
