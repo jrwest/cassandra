@@ -56,9 +56,6 @@ public class SnappyCompressor implements Compressor
         // this would throw java.lang.NoClassDefFoundError if Snappy class
         // wasn't found at runtime which should be processed by the calling method
         Snappy.getNativeLibraryVersion();
-
-        logger.warn("You're using the deprecated Snappy compressor. Please switch to a modern supported alternative " +
-                    "such as LZ4");
     }
 
     @Override
