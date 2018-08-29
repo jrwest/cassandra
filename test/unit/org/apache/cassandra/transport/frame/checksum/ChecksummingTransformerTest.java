@@ -34,14 +34,15 @@ import org.apache.cassandra.transport.frame.compress.Compressor;
 import org.apache.cassandra.transport.frame.compress.LZ4Compressor;
 import org.apache.cassandra.transport.frame.compress.SnappyCompressor;
 import org.apache.cassandra.utils.ChecksumType;
+import org.quicktheories.core.Gen;
 
-/**
- * Created by mkjellman on 3/6/17.
- */
+import static org.quicktheories.QuickTheory.qt;
+import static org.quicktheories.generators.SourceDSL.*;
+
 public class ChecksummingTransformerTest
 {
-    private static final Random RANDOM = new Random();
     private static final int DEFAULT_BLOCK_SIZE = 1 << 15;
+    private static final int MAX_INPUT_SIZE = 1 << 18;
     private static final EnumSet<Frame.Header.Flag> FLAGS = EnumSet.of(Frame.Header.Flag.COMPRESSED, Frame.Header.Flag.CHECKSUMMED);
 
     @BeforeClass
@@ -52,64 +53,56 @@ public class ChecksummingTransformerTest
     }
 
     @Test
-    public void roundTripSmall() throws IOException
+    public void roundTripSafetyProperty()
     {
-        String randomString = generateRandomWord(10);
-        roundTrip(randomString, null, ChecksumType.CRC32, DEFAULT_BLOCK_SIZE);
-        roundTrip(randomString, null, ChecksumType.Adler32, DEFAULT_BLOCK_SIZE);
-        roundTrip(randomString, LZ4Compressor.INSTANCE, ChecksumType.CRC32, DEFAULT_BLOCK_SIZE);
-        roundTrip(randomString, LZ4Compressor.INSTANCE, ChecksumType.Adler32, DEFAULT_BLOCK_SIZE);
-        roundTrip(randomString, SnappyCompressor.INSTANCE, ChecksumType.CRC32, DEFAULT_BLOCK_SIZE);
-        roundTrip(randomString, SnappyCompressor.INSTANCE, ChecksumType.Adler32, DEFAULT_BLOCK_SIZE);
+        qt().withExamples(500)
+            .forAll(inputs(),
+                    compressors(),
+                    checksumTypes(),
+                    blocksizes())
+            .checkAssert(this::roundTrip);
     }
 
-    @Test
-    public void roundTripSimple() throws IOException
+    private void roundTrip(String input, Compressor compressor, ChecksumType checksum, int blockSize)
     {
-        testRoundTrips(null, ChecksumType.CRC32);
-        testRoundTrips(null, ChecksumType.Adler32);
-        testRoundTrips(LZ4Compressor.INSTANCE, ChecksumType.CRC32);
-        testRoundTrips(LZ4Compressor.INSTANCE, ChecksumType.Adler32);
-        testRoundTrips(SnappyCompressor.INSTANCE, ChecksumType.CRC32);
-        testRoundTrips(SnappyCompressor.INSTANCE, ChecksumType.Adler32);
-    }
-
-    private static void testRoundTrips(Compressor compressor, ChecksumType checksum) throws IOException
-    {
-        // encode with multiple block sizes to make sure they all work
-        String randomString = generateRandomWord(1 << 18);
-        roundTrip(randomString, compressor, checksum, 1 << 14); // 16kb
-        roundTrip(randomString, compressor, checksum, 1 << 15); // 32kb
-        roundTrip(randomString, compressor, checksum, 1 << 16); // 64kb
-        roundTrip(randomString, compressor, checksum, 1 << 21); // 2mb
-
-        String highlyCompressableString = "bbbbbbbbbb";
-        roundTrip(highlyCompressableString, compressor, checksum, 1 << 14); // 16kb
-        roundTrip(highlyCompressableString, compressor, checksum, 1 << 15); // 32kb
-        roundTrip(highlyCompressableString, compressor, checksum, 1 << 16); // 64kb
-        roundTrip(highlyCompressableString, compressor, checksum, 1 << 21); // 2mb
-    }
-
-    private static void roundTrip(String input, Compressor compressor, ChecksumType checksum, int blockSize) throws IOException
-    {
+        //System.out.println("Input Size: " + input.length() + ", compressor: " + compressor + ", checksum type: " + checksum + ", block size: " + blockSize);
         ChecksummingTransformer transformer = new ChecksummingTransformer(checksum, blockSize, compressor);
         byte[] expectedBytes = input.getBytes();
         ByteBuf expectedBuf = Unpooled.wrappedBuffer(expectedBytes);
 
-        ByteBuf outbound = transformer.transformOutbound(expectedBuf);
-        ByteBuf inbound = transformer.transformInbound(outbound, FLAGS);
-        // reset reader index on expectedBuf back to 0 as it will have been entirely consumed by the transformOutbound() call
-        expectedBuf.readerIndex(0);
-        Assert.assertEquals(expectedBuf, inbound);
+        try
+        {
+            ByteBuf outbound = transformer.transformOutbound(expectedBuf);
+            ByteBuf inbound = transformer.transformInbound(outbound, FLAGS);
+
+            // reset reader index on expectedBuf back to 0 as it will have been entirely consumed by the transformOutbound() call
+            expectedBuf.readerIndex(0);
+            Assert.assertEquals(expectedBuf, inbound);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    private static String generateRandomWord(int length)
+    private Gen<String> inputs()
     {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < length; i++)
-        {
-            sb.append((char) (RANDOM.nextInt(26) + 'a'));
-        }
-        return sb.toString();
+        Gen<String> randomStrings = strings().basicMultilingualPlaneAlphabet().ofLengthBetween(0, MAX_INPUT_SIZE);
+        Gen<String> highlyCompressable = strings().betweenCodePoints('c', 'e').ofLengthBetween(1, MAX_INPUT_SIZE);
+        return randomStrings.mix(highlyCompressable, 50);
     }
+
+    private Gen<Compressor> compressors()
+    {
+        return arbitrary().pick(null, LZ4Compressor.INSTANCE, SnappyCompressor.INSTANCE);
+    }
+
+    private Gen<ChecksumType> checksumTypes()
+    {
+        return arbitrary().enumValuesWithNoOrder(ChecksumType.class);
+    }
+
+    private Gen<Integer> blocksizes()
+    {
+        return arbitrary().constant(DEFAULT_BLOCK_SIZE);
+    }
+
 }
