@@ -19,8 +19,6 @@ package org.apache.cassandra.transport.messages;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
-
 
 import io.netty.buffer.ByteBuf;
 
@@ -91,18 +89,18 @@ public class StartupMessage extends Message.Request
             throw new ProtocolException(e.getMessage());
         }
 
-        Optional<ChecksumType> checksumType = getChecksumType();
-        Optional<Compressor> compressor = getCompressor();
+        ChecksumType checksumType = getChecksumType();
+        Compressor compressor = getCompressor();
 
-        if (checksumType.isPresent())
+        if (null != checksumType)
         {
             if (!connection.getVersion().supportsChecksums())
                 throw new ProtocolException(String.format("Invalid message flag. Protocol version %s does not support frame body checksums", connection.getVersion().toString()));
-            connection.setTransformer(ChecksummingTransformer.getTransformer(checksumType.get(), compressor.orElse(null)));
+            connection.setTransformer(ChecksummingTransformer.getTransformer(checksumType, compressor));
         }
-        else if (compressor.isPresent())
+        else if (null != compressor)
         {
-            connection.setTransformer(CompressingTransformer.getTransformer(compressor.get()));
+            connection.setTransformer(CompressingTransformer.getTransformer(compressor));
         }
 
         ClientState clientState = state.getClientState();
@@ -127,12 +125,12 @@ public class StartupMessage extends Message.Request
         return newMap;
     }
 
-    private Optional<ChecksumType> getChecksumType() throws ProtocolException
+    private ChecksumType getChecksumType() throws ProtocolException
     {
         String name = options.get(CHECKSUM);
         try
         {
-            return name == null ? Optional.empty() : Optional.of(ChecksumType.valueOf(name));
+            return name != null ? ChecksumType.valueOf(name) : null;
         }
         catch (IllegalArgumentException e)
         {
@@ -141,11 +139,11 @@ public class StartupMessage extends Message.Request
         }
     }
 
-    private Optional<Compressor> getCompressor() throws ProtocolException
+    private Compressor getCompressor() throws ProtocolException
     {
         String name = options.get(COMPRESSION);
         if (null == name)
-            return Optional.empty();
+            return null;
 
         switch (name.toLowerCase())
         {
@@ -154,10 +152,10 @@ public class StartupMessage extends Message.Request
                 if (SnappyCompressor.INSTANCE == null)
                     throw new ProtocolException("This instance does not support Snappy compression");
 
-                return Optional.of(SnappyCompressor.INSTANCE);
+                return SnappyCompressor.INSTANCE;
             }
             case "lz4":
-                return Optional.of(LZ4Compressor.INSTANCE);
+                return LZ4Compressor.INSTANCE;
             default:
                 throw new ProtocolException(String.format("Unknown compression algorithm: %s", name));
         }

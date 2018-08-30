@@ -20,7 +20,6 @@ package org.apache.cassandra.transport.frame.checksum;
 
 import java.io.IOException;
 import java.util.EnumSet;
-import java.util.Optional;
 
 import com.google.common.collect.ImmutableTable;
 
@@ -31,11 +30,14 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.transport.Frame;
+import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.frame.FrameBodyTransformer;
 import org.apache.cassandra.transport.frame.compress.Compressor;
 import org.apache.cassandra.transport.frame.compress.LZ4Compressor;
 import org.apache.cassandra.transport.frame.compress.SnappyCompressor;
 import org.apache.cassandra.utils.ChecksumType;
+
+import static org.apache.cassandra.transport.CBUtil.readUnsignedShort;
 
 /**
  * Provides a format that implements chunking and checksumming logic
@@ -84,7 +86,7 @@ import org.apache.cassandra.utils.ChecksumType;
  * <p>
  * <strong>1.2. Checksum Compression Description</strong>
  * <p>
- * The entire cpayload is broken into n chunks each with a pair of checksums:
+ * The entire payload is broken into n chunks each with a pair of checksums:
  * <ul>
  * <li>[int]: compressed length of serialized bytes for this chunk (e.g. the length post compression)
  * <li>[int]: expected length of the decompressed bytes (e.g. the length after decompression)
@@ -200,7 +202,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
             // protect us against a bogus length causing potential havoc on deserialization
             chunkLengths[0] = (byte) written;
             chunkLengths[1] = (byte) lengthToRead;
-            int lengthsChecksum = (int) checksum.of(chunkLengths, 0, 2);
+            int lengthsChecksum = (int) checksum.of(chunkLengths, 0, chunkLengths.length);
             ret.writeInt(lengthsChecksum);
 
             ret.writeBytes(outBuf, 0, written); // the actual content bytes, possibly compressed
@@ -231,7 +233,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
             chunkLengths[1] = (byte) decompressedLength;
 
             // calculate checksum on lengths (decompressed and compressed) and make sure it matches
-            int calculatedLengthsChecksum = (int) checksum.of(chunkLengths, 0, 2);
+            int calculatedLengthsChecksum = (int) checksum.of(chunkLengths, 0, chunkLengths.length);
             // make sure checksum on lengths match
             if (lengthsChecksum != calculatedLengthsChecksum)
             {
@@ -267,7 +269,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
             // make sure they match
             if (expectedDecompressedChecksum != calculatedDecompressedChecksum)
             {
-                throw new IOException("Decompressed checksum for chunk does not match expected checksum");
+                throw new ProtocolException("Decompressed checksum for chunk does not match expected checksum");
             }
         }
 
@@ -299,14 +301,5 @@ public class ChecksummingTransformer implements FrameBodyTransformer
             return input;
 
         return compressor.decompress(input, 0, length, expectedLength);
-    }
-
-    private static int readUnsignedShort(ByteBuf buf) throws IOException
-    {
-        int ch1 = buf.readByte() & 0xFF;
-        int ch2 = buf.readByte() & 0xFF;
-        if ((ch1 | ch2) < 0)
-            throw new IOException("Failed to read unsigned short as deserialized value is bogus/negative");
-        return (ch1 << 8) + (ch2);
     }
 }

@@ -20,6 +20,19 @@ package org.apache.cassandra.transport.frame.compress;
 
 import java.io.IOException;
 
+/**
+ * Analogous to {@link org.apache.cassandra.io.compress.ICompressor}, but different enough that
+ * it's worth specializing:
+ * <ul>
+ *   <li>disk IO is mostly oriented around ByteBuffers, whereas with Frames raw byte arrays are
+ *   primarily used </li>
+ *   <li>our LZ4 compression format is opionated about the endianness of the preceding length
+ *   bytes, big for protocol, little for disk</li>
+ *   <li>ICompressor doesn't make it easy to pre-allocate the output buffer/array</li>
+ * </ul>
+ *
+ * In future it may be worth revisiting to unify the interfaces.
+ */
 public interface Compressor
 {
     /**

@@ -20,17 +20,12 @@ package org.apache.cassandra.transport.frame.compress;
 
 import java.io.IOException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.xerial.snappy.Snappy;
 import org.xerial.snappy.SnappyError;
 
 public class SnappyCompressor implements Compressor
 {
-    private static final Logger logger = LoggerFactory.getLogger(SnappyCompressor.class);
-
     public static final SnappyCompressor INSTANCE;
     static
     {

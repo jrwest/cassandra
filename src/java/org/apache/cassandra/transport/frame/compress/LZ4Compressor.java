@@ -23,9 +23,6 @@ import java.io.IOException;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4FastDecompressor;
 
-/**
- * A LZ4 implementation of {@link org.apache.cassandra.transport.frame.compress.Compressor}.
- */
 public class LZ4Compressor implements Compressor
 {
     public static final LZ4Compressor INSTANCE = new LZ4Compressor();
