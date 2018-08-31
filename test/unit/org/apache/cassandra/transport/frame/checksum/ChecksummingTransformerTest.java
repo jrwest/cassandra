@@ -30,10 +30,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.transport.Frame;
+import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.frame.compress.Compressor;
 import org.apache.cassandra.transport.frame.compress.LZ4Compressor;
 import org.apache.cassandra.transport.frame.compress.SnappyCompressor;
 import org.apache.cassandra.utils.ChecksumType;
+import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 
 import static org.quicktheories.QuickTheory.qt;
@@ -71,6 +73,42 @@ public class ChecksummingTransformerTest
                     checksumTypes(),
                     blocksizes())
             .checkAssert(this::roundTrip);
+    }
+
+    @Test
+    public void corruptionCausesFailure()
+    {
+        qt().withFixedSeed(179207634899674L)
+            .forAll(inputWithCorruptablePosition(),
+                    integers().between(0, Byte.MAX_VALUE).map(i -> i.byteValue()),
+                    compressors(),
+                    checksumTypes())
+            .checkAssert(this::roundTripWithCorruption);
+    }
+
+    private void roundTripWithCorruption(Pair<String, Integer> inputAndCorruptablePosition,
+                                         byte corruptionValue,
+                                         Compressor compressor,
+                                         ChecksumType checksum)
+    {
+        String input = inputAndCorruptablePosition.left;
+        int byteToCorrupt = inputAndCorruptablePosition.right;
+        ChecksummingTransformer transformer = new ChecksummingTransformer(checksum, DEFAULT_BLOCK_SIZE, compressor);
+
+        ByteBuf outbound = transformer.transformOutbound(Unpooled.wrappedBuffer(input.getBytes()));
+        try
+        {
+            int oldIndex = outbound.writerIndex();
+            outbound.writerIndex(byteToCorrupt);
+            outbound.writeByte(corruptionValue);
+            outbound.writerIndex(oldIndex);
+            transformer.transformInbound(outbound, FLAGS);
+            Assert.fail();
+        } catch(ProtocolException e)
+        {
+            return;
+        }
+
     }
 
     @Test
@@ -135,6 +173,13 @@ public class ChecksummingTransformerTest
         // reset reader index on expectedBuf back to 0 as it will have been entirely consumed by the transformOutbound() call
         expectedBuf.readerIndex(0);
         Assert.assertEquals(expectedBuf, inbound);
+    }
+
+    private Gen<Pair<String, Integer>> inputWithCorruptablePosition()
+    {
+        // we only generate corruption for byte 2 onward. This is to skip introducing corruption in the number
+        // of chunks (which isn't checksummed
+        return inputs().flatMap(s -> integers().between(2, s.length() + 2).map(i -> Pair.create(s, i)));
     }
 
     private Gen<String> inputs()
