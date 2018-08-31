@@ -154,7 +154,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         return null == compressor ? CHECKSUMS_ONLY : CHECKSUMS_AND_COMPRESSION;
     }
 
-    public ByteBuf transformOutbound(ByteBuf inputBuf) throws IOException
+    public ByteBuf transformOutbound(ByteBuf inputBuf)
     {
         // be pessimistic about life and assume the compressed output will be the same size as the input bytes
         int maxTotalCompressedLength = maxCompressedLength(inputBuf.readableBytes());
@@ -215,7 +215,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         return ret;
     }
 
-    public ByteBuf transformInbound(ByteBuf inputBuf, EnumSet<Frame.Header.Flag> flags) throws IOException
+    public ByteBuf transformInbound(ByteBuf inputBuf, EnumSet<Frame.Header.Flag> flags)
     {
         int numChunks = readUnsignedShort(inputBuf);
 
@@ -237,9 +237,9 @@ public class ChecksummingTransformer implements FrameBodyTransformer
             // make sure checksum on lengths match
             if (lengthsChecksum != calculatedLengthsChecksum)
             {
-                throw new IOException(String.format("Checksum invalid on chunk bytes lengths. Deserialized compressed " +
-                                                    "length: %d decompressed length: %d. %d != %d", compressedLength,
-                                                    decompressedLength, lengthsChecksum, calculatedLengthsChecksum));
+                throw new ProtocolException(String.format("Checksum invalid on chunk bytes lengths. Deserialized compressed " +
+                                                          "length: %d decompressed length: %d. %d != %d", compressedLength,
+                                                          decompressedLength, lengthsChecksum, calculatedLengthsChecksum));
             }
 
             if (currentPosition + decompressedLength > retBuf.length)
@@ -284,7 +284,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
 
     }
 
-    private int maybeCompress(byte[] input, int length, byte[] output) throws IOException
+    private int maybeCompress(byte[] input, int length, byte[] output)
     {
         if (null == compressor)
         {
@@ -292,14 +292,30 @@ public class ChecksummingTransformer implements FrameBodyTransformer
             return length;
         }
 
-        return compressor.compress(input, 0, length, output, 0);
+        try
+        {
+            return compressor.compress(input, 0, length, output, 0);
+        }
+        catch (IOException e)
+        {
+            logger.info("IO error during compression of frame body chunk", e);
+            throw new ProtocolException("Error compressing frame body chunk");
+        }
     }
 
-    private byte[] maybeDecompress(byte[] input, int length, int expectedLength, EnumSet<Frame.Header.Flag> flags) throws IOException
+    private byte[] maybeDecompress(byte[] input, int length, int expectedLength, EnumSet<Frame.Header.Flag> flags)
     {
         if (null == compressor || !flags.contains(Frame.Header.Flag.COMPRESSED))
             return input;
 
-        return compressor.decompress(input, 0, length, expectedLength);
+        try
+        {
+            return compressor.decompress(input, 0, length, expectedLength);
+        }
+        catch (IOException e)
+        {
+            logger.info("IO error during decompression of frame body chunk", e);
+            throw new ProtocolException("Error decompressing frame body chunk");
+        }
     }
 }

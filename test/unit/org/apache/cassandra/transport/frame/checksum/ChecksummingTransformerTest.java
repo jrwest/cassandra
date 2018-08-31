@@ -18,9 +18,7 @@
 
 package org.apache.cassandra.transport.frame.checksum;
 
-import java.io.IOException;
 import java.util.EnumSet;
-import java.util.Random;
 
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -30,6 +28,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.transport.Frame;
+import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.frame.compress.Compressor;
 import org.apache.cassandra.transport.frame.compress.LZ4Compressor;
 import org.apache.cassandra.transport.frame.compress.SnappyCompressor;
@@ -63,23 +62,61 @@ public class ChecksummingTransformerTest
             .checkAssert(this::roundTrip);
     }
 
+    @Test
+    public void roundTripZeroLengthInput()
+    {
+        qt().forAll(zeroLengthInputs(),
+                    compressors(),
+                    checksumTypes(),
+                    blocksizes())
+            .checkAssert(this::roundTrip);
+    }
+
+    @Test
+    public void decompressingUncompressedFrameThrowsProtocolException()
+    {
+        qt().withExamples(50)
+            .forAll(inputs(),
+                    compressors(),
+                    checksumTypes(),
+                    blocksizes())
+            .checkAssert(this::roundTripWithUncompressedInput);
+    }
+
     private void roundTrip(String input, Compressor compressor, ChecksumType checksum, int blockSize)
     {
-        //System.out.println("Input Size: " + input.length() + ", compressor: " + compressor + ", checksum type: " + checksum + ", block size: " + blockSize);
+        System.out.println("Input Size: " + input.length() + ", compressor: " + compressor + ", checksum type: " + checksum + ", block size: " + blockSize);
         ChecksummingTransformer transformer = new ChecksummingTransformer(checksum, blockSize, compressor);
         byte[] expectedBytes = input.getBytes();
         ByteBuf expectedBuf = Unpooled.wrappedBuffer(expectedBytes);
 
+        ByteBuf outbound = transformer.transformOutbound(expectedBuf);
+        ByteBuf inbound = transformer.transformInbound(outbound, FLAGS);
+
+        // reset reader index on expectedBuf back to 0 as it will have been entirely consumed by the transformOutbound() call
+        expectedBuf.readerIndex(0);
+        Assert.assertEquals(expectedBuf, inbound);
+    }
+
+    private void roundTripWithUncompressedInput(String input, Compressor compressor, ChecksumType checksum, int blockSize)
+    {
+        System.out.println("Input Size: " + input.length() + ", compressor: " + compressor + ", checksum type: " + checksum + ", block size: " + blockSize);
+        if (compressor == null)
+            return;
+
+        ChecksummingTransformer inboundTransformer = new ChecksummingTransformer(checksum, blockSize, compressor);
+        ChecksummingTransformer outboundTransformer = new ChecksummingTransformer(checksum, blockSize, null);
+        byte[] expectedBytes = input.getBytes();
+        ByteBuf expectedBuf = Unpooled.wrappedBuffer(expectedBytes);
+        ByteBuf outbound = outboundTransformer.transformOutbound(expectedBuf);
         try
         {
-            ByteBuf outbound = transformer.transformOutbound(expectedBuf);
-            ByteBuf inbound = transformer.transformInbound(outbound, FLAGS);
-
-            // reset reader index on expectedBuf back to 0 as it will have been entirely consumed by the transformOutbound() call
-            expectedBuf.readerIndex(0);
-            Assert.assertEquals(expectedBuf, inbound);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+            inboundTransformer.transformInbound(outbound, FLAGS);
+            Assert.fail("Expected ProtocolException");
+        }
+        catch(ProtocolException p)
+        {
+            // expected
         }
     }
 
@@ -88,6 +125,11 @@ public class ChecksummingTransformerTest
         Gen<String> randomStrings = strings().basicMultilingualPlaneAlphabet().ofLengthBetween(0, MAX_INPUT_SIZE);
         Gen<String> highlyCompressable = strings().betweenCodePoints('c', 'e').ofLengthBetween(1, MAX_INPUT_SIZE);
         return randomStrings.mix(highlyCompressable, 50);
+    }
+
+    private Gen<String> zeroLengthInputs()
+    {
+        return strings().ascii().ofLength(0);
     }
 
     private Gen<Compressor> compressors()
