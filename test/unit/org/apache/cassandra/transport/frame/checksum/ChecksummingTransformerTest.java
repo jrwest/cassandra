@@ -18,7 +18,9 @@
 
 package org.apache.cassandra.transport.frame.checksum;
 
+import java.io.IOException;
 import java.util.EnumSet;
+import java.util.Random;
 
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -28,7 +30,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.transport.Frame;
-import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.frame.compress.Compressor;
 import org.apache.cassandra.transport.frame.compress.LZ4Compressor;
 import org.apache.cassandra.transport.frame.compress.SnappyCompressor;
@@ -73,19 +74,57 @@ public class ChecksummingTransformerTest
     }
 
     @Test
-    public void decompressingUncompressedFrameThrowsProtocolException()
+    public void roundTripWithSingleUncompressableChunk()
     {
-        qt().withExamples(50)
-            .forAll(inputs(),
-                    compressors(),
-                    checksumTypes(),
-                    blocksizes())
-            .checkAssert(this::roundTripWithUncompressedInput);
+        byte[] bytes = new byte[]{1};
+        ChecksummingTransformer transformer = new ChecksummingTransformer(ChecksumType.CRC32, DEFAULT_BLOCK_SIZE, LZ4Compressor.INSTANCE);
+        ByteBuf expectedBuf = Unpooled.wrappedBuffer(bytes);
+
+        ByteBuf outbound = transformer.transformOutbound(expectedBuf);
+        ByteBuf inbound = transformer.transformInbound(outbound, FLAGS);
+
+        // reset reader index on expectedBuf back to 0 as it will have been entirely consumed by the transformOutbound() call
+        expectedBuf.readerIndex(0);
+        Assert.assertEquals(expectedBuf, inbound);
+    }
+
+    @Test
+    public void roundTripWithCompressableAndUncompressableChunks() throws IOException
+    {
+        Compressor compressor = LZ4Compressor.INSTANCE;
+        Random random = new Random();
+        int inputLen = 127;
+
+        byte[] uncompressable = new byte[inputLen];
+        for (int i = 0; i < uncompressable.length; i++)
+            uncompressable[i] = (byte) random.nextInt(127);
+
+        byte[] compressed = new byte[compressor.maxCompressedLength(uncompressable.length)];
+        Assert.assertTrue(compressor.compress(uncompressable, 0, uncompressable.length, compressed, 0) > uncompressable.length);
+
+        byte[] compressable = new byte[inputLen];
+        for (int i = 0; i < compressable.length; i++)
+            compressable[i] = (byte)1;
+        Assert.assertTrue(compressor.compress(compressable, 0, compressable.length, compressable, 0) < compressable.length);
+
+        ChecksummingTransformer transformer = new ChecksummingTransformer(ChecksumType.CRC32, uncompressable.length, LZ4Compressor.INSTANCE);
+        byte[] expectedBytes = new byte[inputLen * 3];
+        ByteBuf expectedBuf = Unpooled.wrappedBuffer(expectedBytes);
+        expectedBuf.writerIndex(0);
+        expectedBuf.writeBytes(uncompressable);
+        expectedBuf.writeBytes(uncompressable);
+        expectedBuf.writeBytes(compressable);
+
+        ByteBuf outbound = transformer.transformOutbound(expectedBuf);
+        ByteBuf inbound = transformer.transformInbound(outbound, FLAGS);
+
+        // reset reader index on expectedBuf back to 0 as it will have been entirely consumed by the transformOutbound() call
+        expectedBuf.readerIndex(0);
+        Assert.assertEquals(expectedBuf, inbound);
     }
 
     private void roundTrip(String input, Compressor compressor, ChecksumType checksum, int blockSize)
     {
-        System.out.println("Input Size: " + input.length() + ", compressor: " + compressor + ", checksum type: " + checksum + ", block size: " + blockSize);
         ChecksummingTransformer transformer = new ChecksummingTransformer(checksum, blockSize, compressor);
         byte[] expectedBytes = input.getBytes();
         ByteBuf expectedBuf = Unpooled.wrappedBuffer(expectedBytes);
@@ -96,28 +135,6 @@ public class ChecksummingTransformerTest
         // reset reader index on expectedBuf back to 0 as it will have been entirely consumed by the transformOutbound() call
         expectedBuf.readerIndex(0);
         Assert.assertEquals(expectedBuf, inbound);
-    }
-
-    private void roundTripWithUncompressedInput(String input, Compressor compressor, ChecksumType checksum, int blockSize)
-    {
-        System.out.println("Input Size: " + input.length() + ", compressor: " + compressor + ", checksum type: " + checksum + ", block size: " + blockSize);
-        if (compressor == null)
-            return;
-
-        ChecksummingTransformer inboundTransformer = new ChecksummingTransformer(checksum, blockSize, compressor);
-        ChecksummingTransformer outboundTransformer = new ChecksummingTransformer(checksum, blockSize, null);
-        byte[] expectedBytes = input.getBytes();
-        ByteBuf expectedBuf = Unpooled.wrappedBuffer(expectedBytes);
-        ByteBuf outbound = outboundTransformer.transformOutbound(expectedBuf);
-        try
-        {
-            inboundTransformer.transformInbound(outbound, FLAGS);
-            Assert.fail("Expected ProtocolException");
-        }
-        catch(ProtocolException p)
-        {
-            // expected
-        }
     }
 
     private Gen<String> inputs()

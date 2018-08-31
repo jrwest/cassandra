@@ -165,8 +165,9 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         ret.writerIndex(0);
         ret.readerIndex(0);
 
-        // write out bogus short to start with to pre-allocate space as we'll encode one at the end when we finalize
-        // for the number of compressed chunks to expect
+        // write out bogus short to start with as we'll encode one at the end
+        // when we finalize the number of compressed chunks to expect and this
+        // sets the writer index correctly for starting the first chunk
         ret.writeShort((short) 0);
 
         byte[] inBuf = new byte[blockSize];
@@ -175,19 +176,46 @@ public class ChecksummingTransformer implements FrameBodyTransformer
 
         int numCompressedChunks = 0;
         int readableBytes;
+        int lengthsChecksum;
         while ((readableBytes = inputBuf.readableBytes()) > 0)
         {
             int lengthToRead = Math.min(blockSize, readableBytes);
             inputBuf.readBytes(inBuf, 0, lengthToRead);
-            int written = maybeCompress(inBuf, lengthToRead, outBuf);
             int uncompressedChunkChecksum = (int) checksum.of(inBuf, 0, lengthToRead);
+            int compressedSize = maybeCompress(inBuf, lengthToRead, outBuf);
 
-            if (ret.writableBytes() < (CHUNK_HEADER_OVERHEAD + written))
+            if (compressedSize < lengthToRead)
+            {
+                // there was some benefit to compression so write out the compressed
+                // and uncompressed sizes of the chunk
+                ret.writeInt(compressedSize);
+                ret.writeInt(lengthToRead);
+                chunkLengths[0] = (byte) compressedSize;
+            }
+            else
+            {
+                // if no compression was possible, there's no need to write two lengths, so
+                // just write the size of the original content (or block size), with its
+                // sign flipped to signal no compression.
+                ret.writeInt(-lengthToRead);
+                chunkLengths[0] = (byte)-lengthToRead;
+            }
+
+            chunkLengths[1] = (byte) lengthToRead;
+
+            // calculate the checksum of the compressed and decompressed lengths
+            // protect us against a bogus length causing potential havoc on deserialization
+            lengthsChecksum = (int) checksum.of(chunkLengths, 0, chunkLengths.length);
+            ret.writeInt(lengthsChecksum);
+
+            // figure out how many actual bytes we're going to write and make sure we have capacity
+            int toWrite = Math.min(compressedSize, lengthToRead);
+            if (ret.writableBytes() < (CHUNK_HEADER_OVERHEAD + toWrite))
             {
                 // this really shouldn't ever happen -- it means we either mis-calculated the number of chunks we
                 // expected to create, we gave some input to the compressor that caused the output to be much
                 // larger than the input.. or some other edge condition. Regardless -- resize if necessary.
-                byte[] resizedRetBuf = new byte[(retBuf.length + (CHUNK_HEADER_OVERHEAD + written)) * 3 / 2];
+                byte[] resizedRetBuf = new byte[(retBuf.length + (CHUNK_HEADER_OVERHEAD + toWrite)) * 3 / 2];
                 System.arraycopy(retBuf, 0, resizedRetBuf, 0, retBuf.length);
                 retBuf = resizedRetBuf;
                 ByteBuf resizedRetByteBuf = Unpooled.wrappedBuffer(retBuf);
@@ -195,23 +223,20 @@ public class ChecksummingTransformer implements FrameBodyTransformer
                 ret = resizedRetByteBuf;
             }
 
-            ret.writeInt(written); // compressed length of chunk
-            ret.writeInt(lengthToRead); // uncompressed length of chunk
+            // write the bytes, either compressed or uncompressed
+            if (compressedSize < lengthToRead)
+                ret.writeBytes(outBuf, 0, toWrite); // compressed
+            else
+                ret.writeBytes(inBuf, 0, toWrite);  // uncompressed
 
-            // calculate the checksum of the compressed and decompressed lengths
-            // protect us against a bogus length causing potential havoc on deserialization
-            chunkLengths[0] = (byte) written;
-            chunkLengths[1] = (byte) lengthToRead;
-            int lengthsChecksum = (int) checksum.of(chunkLengths, 0, chunkLengths.length);
-            ret.writeInt(lengthsChecksum);
-
-            ret.writeBytes(outBuf, 0, written); // the actual content bytes, possibly compressed
-            ret.writeInt(uncompressedChunkChecksum); // crc32 checksum calculated for source bytes
+            // checksum of the uncompressed chunk
+            ret.writeInt(uncompressedChunkChecksum);
 
             numCompressedChunks++;
         }
-        ret.setShort(0, (short) numCompressedChunks);
 
+        // now update the number of chunks
+        ret.setShort(0, (short) numCompressedChunks);
         return ret;
     }
 
@@ -220,6 +245,8 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         int numChunks = readUnsignedShort(inputBuf);
 
         int currentPosition = 0;
+        int decompressedLength;
+        int lengthsChecksum;
 
         byte[] buf = null;
         byte[] retBuf = new byte[inputBuf.readableBytes()];
@@ -227,14 +254,16 @@ public class ChecksummingTransformer implements FrameBodyTransformer
         for (int i = 0; i < numChunks; i++)
         {
             int compressedLength = inputBuf.readInt();
-            int decompressedLength = inputBuf.readInt();
-            int lengthsChecksum = inputBuf.readInt();
+            // if the input was actually compressed, then the writer should have written a decompressed
+            // length. If not, then we can infer that the compressed length has had its sign bit flipped
+            // and can derive the decompressed length from that
+            decompressedLength = compressedLength >= 0 ? inputBuf.readInt() : Math.abs(compressedLength);
+
             chunkLengths[0] = (byte) compressedLength;
             chunkLengths[1] = (byte) decompressedLength;
-
+            lengthsChecksum = inputBuf.readInt();
             // calculate checksum on lengths (decompressed and compressed) and make sure it matches
             int calculatedLengthsChecksum = (int) checksum.of(chunkLengths, 0, chunkLengths.length);
-            // make sure checksum on lengths match
             if (lengthsChecksum != calculatedLengthsChecksum)
             {
                 throw new ProtocolException(String.format("Checksum invalid on chunk bytes lengths. Deserialized compressed " +
@@ -242,6 +271,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
                                                           decompressedLength, lengthsChecksum, calculatedLengthsChecksum));
             }
 
+            // do we have enough space in the decompression buffer?
             if (currentPosition + decompressedLength > retBuf.length)
             {
                 byte[] resizedBuf = new byte[retBuf.length + decompressedLength * 3 / 2];
@@ -249,24 +279,25 @@ public class ChecksummingTransformer implements FrameBodyTransformer
                 retBuf = resizedBuf;
             }
 
-            if (buf == null || buf.length < compressedLength)
-            {
-                buf = new byte[compressedLength];
-            }
+            // now we've validated the lengths checksum, we can abs the compressed length
+            // to figure out the actual number of bytes we're going to read
+            int toRead = Math.abs(compressedLength);
+            if (buf == null || buf.length < toRead)
+                buf = new byte[toRead];
 
-            // get the compressed bytes for this chunk
-            inputBuf.readBytes(buf, 0, compressedLength);
-            // decompress it
+            // get the (possibly) compressed bytes for this chunk
+            inputBuf.readBytes(buf, 0, toRead);
+
+            // decompress using the original compressed length, so it's a no-op if that's < 0
             byte[] decompressedChunk = maybeDecompress(buf, compressedLength, decompressedLength, flags);
+
             // add the decompressed bytes into the ret buf
             System.arraycopy(decompressedChunk, 0, retBuf, currentPosition, decompressedLength);
             currentPosition += decompressedLength;
 
-            // get the checksum of the decompressed bytes as calculated when serialized
+            // get the checksum of the original source bytes and compare against what we read
             int expectedDecompressedChecksum = inputBuf.readInt();
-            // calculate a crc32 checksum of the decompressed bytes we got
             int calculatedDecompressedChecksum = (int) checksum.of(decompressedChunk, 0, decompressedLength);
-            // make sure they match
             if (expectedDecompressedChecksum != calculatedDecompressedChecksum)
             {
                 throw new ProtocolException("Decompressed checksum for chunk does not match expected checksum");
@@ -305,7 +336,7 @@ public class ChecksummingTransformer implements FrameBodyTransformer
 
     private byte[] maybeDecompress(byte[] input, int length, int expectedLength, EnumSet<Frame.Header.Flag> flags)
     {
-        if (null == compressor || !flags.contains(Frame.Header.Flag.COMPRESSED))
+        if (null == compressor || !flags.contains(Frame.Header.Flag.COMPRESSED) || length < 0)
             return input;
 
         try
