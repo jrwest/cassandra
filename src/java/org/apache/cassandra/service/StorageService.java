@@ -5365,6 +5365,17 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         DatabaseDescriptor.setTombstoneFailureThreshold(threshold);
     }
 
+    public int getColumnIndexCacheSize()
+    {
+        return DatabaseDescriptor.getColumnIndexCacheSizeInKB();
+    }
+
+    public void setColumnIndexCacheSize(int cacheSizeInKB)
+    {
+        DatabaseDescriptor.setColumnIndexCacheSize(cacheSizeInKB);
+        logger.info("Updated column_index_cache_size_in_kb to {}", cacheSizeInKB);
+    }
+
     public int getBatchSizeFailureThreshold()
     {
         return DatabaseDescriptor.getBatchSizeFailThresholdInKB();

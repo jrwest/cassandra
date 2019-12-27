@@ -1383,7 +1383,11 @@ public class DatabaseDescriptor
         return conf.column_index_cache_size_in_kb * 1024;
     }
 
-    @VisibleForTesting
+    public static int getColumnIndexCacheSizeInKB()
+    {
+        return conf.column_index_cache_size_in_kb;
+    }
+
     public static void setColumnIndexCacheSize(int val)
     {
         conf.column_index_cache_size_in_kb = val;
