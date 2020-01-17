@@ -43,7 +43,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
             this.iteratorSupplier = iteratorSupplier;
         }
 
-        protected Queue<T> initialValue() throws Exception
+        protected Queue<T> initialValue()
         {
             return new LinkedList<>();
         }
@@ -76,9 +76,9 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
     }
 
     @SuppressWarnings("resource")
-    private static <In, Out> MergeIterator<In, Out> getSimple(List<? extends Iterator<In>> sources,
-                                                              Comparator<? super In> comparator,
-                                                              Reducer<In, Out> reducer)
+    private static <In, Out> MergeIterator<In, Out> getFromPool(List<? extends Iterator<In>> sources,
+                                                                Comparator<? super In> comparator,
+                                                                Reducer<In, Out> reducer)
     {
         Preconditions.checkArgument(sources.size() < ManyToOne.DEFAULT_SIZE);
         MergeIterator<In, Out> mi;
@@ -105,7 +105,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 
         if (sources.size() < ManyToOne.DEFAULT_SIZE)
         {
-            return getSimple(sources, comparator, reducer);
+            return getFromPool(sources, comparator, reducer);
         }
         else
         {
@@ -127,7 +127,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
     {
         if (sources.size() < ManyToOne.DEFAULT_SIZE)
         {
-            return getSimple(sources, comparator, reducer);
+            return getFromPool(sources, comparator, reducer);
         }
         else
         {
@@ -230,7 +230,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
      */
     static final class ManyToOne<In,Out> extends MergeIterator<In,Out>
     {
-        static final int DEFAULT_SIZE = 32;
+        static final int DEFAULT_SIZE = Integer.getInteger("cassandra.pooled_merge_iterator_size", 32);
         protected final Candidate<In>[] candidates;
         protected final Candidate<In>[] heap;
 

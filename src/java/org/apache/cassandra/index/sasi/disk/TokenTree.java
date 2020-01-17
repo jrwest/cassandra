@@ -377,7 +377,6 @@ public class TokenTree
                 try (CloseableIterator<DecoratedKey> mi = o.iterator())
                 {
                     Iterators.addAll(loadedKeys, mi);
-
                 }
             }
         }
