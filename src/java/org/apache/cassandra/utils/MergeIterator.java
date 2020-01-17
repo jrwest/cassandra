@@ -18,7 +18,7 @@
 package org.apache.cassandra.utils;
 
 import java.util.*;
-import java.util.function.Supplier;
+import java.util.function.Function;
 
 import com.google.common.base.Preconditions;
 
@@ -29,7 +29,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 {
     private static class MergeIteratorPool<T extends MergeIterator>
     {
-        private final Supplier<T> iteratorSupplier;
+        private final Function<Queue<T>, T> iteratorSupplier;
         private final FastThreadLocal<Queue<T>> queues = new FastThreadLocal<Queue<T>>()
         {
             protected Queue<T> initialValue() throws Exception
@@ -38,7 +38,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
             }
         };
 
-        public MergeIteratorPool(Supplier<T> iteratorSupplier)
+        public MergeIteratorPool(Function<Queue<T>, T> iteratorSupplier)
         {
             this.iteratorSupplier = iteratorSupplier;
         }
@@ -50,29 +50,30 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 
         T get()
         {
-            T next = queues.get().poll();
+            Queue<T> queue = queues.get();
+            T next = queue.poll();
             if (next == null)
             {
-                next = iteratorSupplier.get();
+                next = iteratorSupplier.apply(queue);
             }
             return next;
         }
 
-        void put(T iter)
-        {
-            queues.get().add(iter);
-        }
-
     }
 
-    private static final MergeIteratorPool<TrivialOneToOne> trivialOneToOne = new MergeIteratorPool<>(() -> new TrivialOneToOne());
-    private static final MergeIteratorPool<OneToOne> oneToOne = new MergeIteratorPool<>(() -> new OneToOne());
-    private static final MergeIteratorPool<ManyToOne> manyToOne = new MergeIteratorPool<>(() -> new ManyToOne());
+    private static final MergeIteratorPool<TrivialOneToOne> trivialOneToOne = new MergeIteratorPool<>(q -> new TrivialOneToOne(q));
+    private static final MergeIteratorPool<OneToOne> oneToOne = new MergeIteratorPool<>(q -> new OneToOne(q));
+    private static final MergeIteratorPool<ManyToOne> manyToOne = new MergeIteratorPool<>(q -> new ManyToOne(q));
 
     protected Reducer<In,Out> reducer;
     protected List<? extends Iterator<In>> iterators;
     protected boolean active = false;
+    protected final Queue<MergeIterator> returnQueue;
 
+    protected MergeIterator(Queue<MergeIterator> returnQueue)
+    {
+        this.returnQueue = returnQueue;
+    }
 
     @SuppressWarnings("resource")
     private static <In, Out> MergeIterator<In, Out> getSimple(List<? extends Iterator<In>> sources,
@@ -131,7 +132,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         else
         {
             // since the in and out types are not the same, we allocate a new iterator to handle the sources
-            ManyToOne<In, Out> mi = new ManyToOne<>(sources.size());
+            ManyToOne<In, Out> mi = new ManyToOne<>(sources.size(), null);
             mi.reset(sources, comparator, reducer);
             return mi;
         }
@@ -175,7 +176,11 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         returnToPool();
     }
 
-    protected abstract void returnToPool();
+    protected void returnToPool()
+    {
+        if (returnQueue != null)
+            returnQueue.add(this);
+    }
 
     /**
      * A MergeIterator that consumes multiple input values per output value.
@@ -246,13 +251,14 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
          */
         static final int SORTED_SECTION_SIZE = 4;
 
-        public ManyToOne()
+        public ManyToOne(Queue<MergeIterator> queue)
         {
-            this(DEFAULT_SIZE);
+            this(DEFAULT_SIZE, queue);
         }
 
-        public ManyToOne(int size)
+        public ManyToOne(int size, Queue<MergeIterator> queue)
         {
+            super(queue);
             this.heap = new Candidate[size];
             this.candidates = new Candidate[size];
             for (int i=0; i<size; i++)
@@ -291,8 +297,10 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 
         protected void returnToPool()
         {
-            if (heap.length == DEFAULT_SIZE)
-                manyToOne.put(this);
+            if (heap.length != DEFAULT_SIZE)
+                return;
+
+            super.returnToPool();
         }
 
         protected final Out computeNext()
@@ -618,6 +626,11 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
     {
         Iterator<In> source;
 
+        private OneToOne(Queue<MergeIterator> queue)
+        {
+            super(queue);
+        }
+
         protected void reset(List<? extends Iterator<In>> sources, Comparator<? super In> comparator, Reducer<In, Out> reducer)
         {
             Preconditions.checkArgument(sources.size() == 1);
@@ -629,11 +642,6 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         {
             source = null;
             super.close();
-        }
-
-        protected void returnToPool()
-        {
-            oneToOne.put(this);
         }
 
         protected Out computeNext()
@@ -650,6 +658,11 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
     {
         Iterator<In> source;
 
+        private TrivialOneToOne(Queue<MergeIterator> queue)
+        {
+            super(queue);
+        }
+
         protected void reset(List<? extends Iterator<In>> sources, Comparator<? super In> comparator, Reducer<In, Out> reducer)
         {
             super.reset(sources, comparator, reducer);
@@ -660,11 +673,6 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         {
             source = null;
             super.close();
-        }
-
-        protected void returnToPool()
-        {
-            trivialOneToOne.put(this);
         }
 
         @SuppressWarnings("unchecked")

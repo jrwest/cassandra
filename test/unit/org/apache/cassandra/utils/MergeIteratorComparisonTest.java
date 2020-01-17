@@ -23,7 +23,6 @@ import java.util.*;
 
 import com.google.common.base.Function;
 import com.google.common.base.Objects;
-import org.apache.cassandra.utils.AbstractIterator;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
@@ -653,6 +652,7 @@ public class MergeIteratorComparisonTest
         protected final ArrayDeque<CandidatePQ<In>> candidates;
         public MergeIteratorPQ(List<? extends Iterator<In>> iters, Comparator<In> comp, Reducer<In, Out> reducer)
         {
+            super(null);
             reset(iters, comp, reducer);
             this.queue = new PriorityQueue<>(Math.max(1, iters.size()));
             for (int i = 0; i < iters.size(); i++)
@@ -664,11 +664,6 @@ public class MergeIteratorComparisonTest
                 this.queue.add(candidate);
             }
             this.candidates = new ArrayDeque<>(queue.size());
-        }
-
-        protected void returnToPool()
-        {
-
         }
 
         protected final Out computeNext()
