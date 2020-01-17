@@ -32,20 +32,15 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         private final Function<Queue<T>, T> iteratorSupplier;
         private final FastThreadLocal<Queue<T>> queues = new FastThreadLocal<Queue<T>>()
         {
-            protected Queue<T> initialValue() throws Exception
+            protected Queue<T> initialValue()
             {
-                return new LinkedList<>();
+                return new ArrayDeque<>(10);
             }
         };
 
         public MergeIteratorPool(Function<Queue<T>, T> iteratorSupplier)
         {
             this.iteratorSupplier = iteratorSupplier;
-        }
-
-        protected Queue<T> initialValue()
-        {
-            return new LinkedList<>();
         }
 
         T get()
