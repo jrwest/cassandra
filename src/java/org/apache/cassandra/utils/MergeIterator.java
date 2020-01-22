@@ -183,7 +183,8 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
             }
         }
 
-        reducer.close();
+        if (reducer != null)
+            reducer.close();
 
         iterators = null;
         reducer = null;
