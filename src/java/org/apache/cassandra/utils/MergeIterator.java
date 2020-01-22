@@ -34,7 +34,27 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         {
             protected Queue<T> initialValue()
             {
-                return new ArrayDeque<>(10);
+                return new ArrayDeque<T>(10) {
+                    private final Thread thread = Thread.currentThread();
+
+                    private void checkThread()
+                    {
+                        Preconditions.checkArgument(thread == Thread.currentThread(),
+                                                    "add/offer must be called from the thread instantiating the queue");
+                    }
+
+                    public boolean add(T t)
+                    {
+                        checkThread();
+                        return super.add(t);
+                    }
+
+                    public boolean offer(T t)
+                    {
+                        checkThread();
+                        return super.offer(t);
+                    }
+                };
             }
         };
 
