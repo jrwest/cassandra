@@ -56,7 +56,6 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 
     }
 
-    private static final MergeIteratorPool<TrivialOneToOne> trivialOneToOne = new MergeIteratorPool<>(q -> new TrivialOneToOne(q));
     private static final MergeIteratorPool<OneToOne> oneToOne = new MergeIteratorPool<>(q -> new OneToOne(q));
     private static final MergeIteratorPool<ManyToOne> manyToOne = new MergeIteratorPool<>(q -> new ManyToOne(q));
 
@@ -79,8 +78,8 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         MergeIterator<In, Out> mi;
         if (sources.size() == 1)
         {
-            mi = reducer.trivialReduceIsTrivial() ? trivialOneToOne.get()
-                                                  : oneToOne.get();
+            mi = oneToOne.get();
+            reducer = reducer.trivialReduceIsTrivial() ? null : reducer;
         }
         else
         {
@@ -643,39 +642,17 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         {
             if (!source.hasNext())
                 return endOfData();
-            reducer.onKeyChange();
-            reducer.reduce(0, source.next());
-            return reducer.getReduced();
+            if (reducer != null)
+            {
+                reducer.onKeyChange();
+                reducer.reduce(0, source.next());
+                return reducer.getReduced();
+            }
+            else
+            {
+                return (Out) source.next();
+            }
         }
     }
 
-    private static class TrivialOneToOne<In, Out> extends MergeIterator<In, Out>
-    {
-        Iterator<In> source;
-
-        private TrivialOneToOne(Queue<MergeIterator> queue)
-        {
-            super(queue);
-        }
-
-        protected void reset(List<? extends Iterator<In>> sources, Comparator<? super In> comparator, Reducer<In, Out> reducer)
-        {
-            super.reset(sources, comparator, reducer);
-            source = sources.get(0);
-        }
-
-        public void close()
-        {
-            source = null;
-            super.close();
-        }
-
-        @SuppressWarnings("unchecked")
-        protected Out computeNext()
-        {
-            if (!source.hasNext())
-                return endOfData();
-            return (Out) source.next();
-        }
-    }
 }
