@@ -29,64 +29,64 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 {
     private static class MergeIteratorPool<T extends MergeIterator>
     {
-        private final Function<Queue<T>, T> iteratorSupplier;
-        private final FastThreadLocal<Queue<T>> queues = new FastThreadLocal<Queue<T>>()
+        private final Thread thread = Thread.currentThread();
+        private final Function<MergeIteratorPool<T>, T> supplier;
+        private T head = null;
+
+        private MergeIteratorPool(Function<MergeIteratorPool<T>, T> supplier)
         {
-            protected Queue<T> initialValue()
-            {
-                return new ArrayDeque<T>(10) {
-                    private final Thread thread = Thread.currentThread();
-
-                    private void checkThread()
-                    {
-                        Preconditions.checkArgument(thread == Thread.currentThread(),
-                                                    "add/offer must be called from the thread instantiating the queue");
-                    }
-
-                    public boolean add(T t)
-                    {
-                        checkThread();
-                        return super.add(t);
-                    }
-
-                    public boolean offer(T t)
-                    {
-                        checkThread();
-                        return super.offer(t);
-                    }
-                };
-            }
-        };
-
-        public MergeIteratorPool(Function<Queue<T>, T> iteratorSupplier)
-        {
-            this.iteratorSupplier = iteratorSupplier;
+            this.supplier = supplier;
         }
 
         T get()
         {
-            Queue<T> queue = queues.get();
-            T next = queue.poll();
-            if (next == null)
-            {
-                next = iteratorSupplier.apply(queue);
-            }
-            return next;
+            if (head == null)
+                return supplier.apply(this);
+
+            T mi = head;
+            head = (T) mi.next;
+
+            return mi;
         }
 
+        void put(T mi)
+        {
+            Preconditions.checkArgument(thread == Thread.currentThread(),
+                                        "put must be called from the thread that instantiated the pool");
+            mi.next = head;
+            head = mi;
+        }
     }
 
-    private static final MergeIteratorPool<OneToOne> oneToOne = new MergeIteratorPool<>(q -> new OneToOne(q));
-    private static final MergeIteratorPool<ManyToOne> manyToOne = new MergeIteratorPool<>(q -> new ManyToOne(q));
+    private static class MergeIteratorPools<T extends MergeIterator> extends FastThreadLocal<MergeIteratorPool<T>>
+    {
+        private final Function<MergeIteratorPool<T>, T> supplier;
+
+        public MergeIteratorPools(Function<MergeIteratorPool<T>, T> supplier)
+        {
+            this.supplier = supplier;
+        }
+
+        protected MergeIteratorPool<T> initialValue() throws Exception
+        {
+            return new MergeIteratorPool<>(supplier);
+        }
+    }
+
+    private static final MergeIteratorPools<OneToOne> oneToOne = new MergeIteratorPools<>(q -> new OneToOne(q));
+    private static final MergeIteratorPools<ManyToOne> manyToOne = new MergeIteratorPools<>(q -> new ManyToOne(q));
 
     protected Reducer<In,Out> reducer;
     protected List<? extends Iterator<In>> iterators;
     protected boolean active = false;
-    protected final Queue<MergeIterator> returnQueue;
+    protected final MergeIteratorPool pool;
 
-    protected MergeIterator(Queue<MergeIterator> returnQueue)
+    // enable creating linked lists for iterator pools without additional garbage
+    protected MergeIterator next;
+
+    protected MergeIterator(MergeIteratorPool pool)
     {
-        this.returnQueue = returnQueue;
+        this.pool = pool;
     }
 
     @SuppressWarnings("resource")
@@ -98,12 +98,13 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         MergeIterator<In, Out> mi;
         if (sources.size() == 1)
         {
-            mi = oneToOne.get();
-            reducer = reducer.trivialReduceIsTrivial() ? null : reducer;
+            mi = oneToOne.get().get();
+            if (reducer.trivialReduceIsTrivial())
+                reducer = null;
         }
         else
         {
-            mi = manyToOne.get();
+            mi = manyToOne.get().get();
         }
 
         mi.reset(sources, comparator, reducer);
@@ -192,8 +193,8 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 
     protected void returnToPool()
     {
-        if (returnQueue != null)
-            returnQueue.add(this);
+        if (pool != null)
+            pool.put(this);
     }
 
     /**
@@ -263,14 +264,14 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
          */
         static final int SORTED_SECTION_SIZE = 4;
 
-        public ManyToOne(Queue<MergeIterator> queue)
+        public ManyToOne(MergeIteratorPool pool)
         {
-            this(DEFAULT_SIZE, queue);
+            this(DEFAULT_SIZE, pool);
         }
 
-        public ManyToOne(int size, Queue<MergeIterator> queue)
+        public ManyToOne(int size, MergeIteratorPool pool)
         {
-            super(queue);
+            super(pool);
             this.heap = new Candidate[size];
             for (int i=0; i<size; i++)
             {
@@ -638,9 +639,9 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
     {
         Iterator<In> source;
 
-        private OneToOne(Queue<MergeIterator> queue)
+        private OneToOne(MergeIteratorPool pool)
         {
-            super(queue);
+            super(pool);
         }
 
         protected void reset(List<? extends Iterator<In>> sources, Comparator<? super In> comparator, Reducer<In, Out> reducer)
