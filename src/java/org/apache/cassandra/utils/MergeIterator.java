@@ -51,8 +51,9 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 
         void put(T mi)
         {
-            Preconditions.checkArgument(thread == Thread.currentThread(),
-                                        "put must be called from the thread that instantiated the pool");
+            if (thread != Thread.currentThread())
+                return;
+
             mi.next = head;
             head = mi;
         }
@@ -168,7 +169,9 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
 
     public void close()
     {
-        Preconditions.checkState(active);
+        if (!active)
+            return;
+
         for (int i=0, isize=iterators.size(); i<isize; i++)
         {
             Iterator<In> iterator = iterators.get(i);
