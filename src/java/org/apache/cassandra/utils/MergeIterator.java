@@ -95,7 +95,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
                                                                 Comparator<? super In> comparator,
                                                                 Reducer<In, Out> reducer)
     {
-        Preconditions.checkArgument(sources.size() < ManyToOne.DEFAULT_SIZE);
+        Preconditions.checkArgument(sources.size() <= ManyToOne.DEFAULT_SIZE);
         MergeIterator<In, Out> mi;
         if (sources.size() == 1)
         {
@@ -119,7 +119,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
                                                        Reducer<T, T> reducer)
     {
 
-        if (sources.size() < ManyToOne.DEFAULT_SIZE)
+        if (sources.size() <= ManyToOne.DEFAULT_SIZE)
         {
             return getFromPool(sources, comparator, reducer);
         }
@@ -141,7 +141,7 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
                                                                     Comparator<? super In> comparator,
                                                                     Reducer<In, Out> reducer)
     {
-        if (sources.size() < ManyToOne.DEFAULT_SIZE)
+        if (sources.size() <= ManyToOne.DEFAULT_SIZE)
         {
             return getFromPool(sources, comparator, reducer);
         }
