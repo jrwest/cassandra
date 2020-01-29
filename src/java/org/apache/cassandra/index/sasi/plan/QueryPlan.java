@@ -76,7 +76,7 @@ public class QueryPlan
         private final QueryController controller;
         private final ReadExecutionController executionController;
 
-        private CloseableIterator<DecoratedKey> currentKeys = null;
+        private Iterator<DecoratedKey> currentKeys = null;
 
         public ResultIterator(Operation operationTree, QueryController controller, ReadExecutionController executionController)
         {
@@ -97,12 +97,6 @@ public class QueryPlan
             {
                 if (currentKeys == null || !currentKeys.hasNext())
                 {
-                    if (currentKeys != null)
-                    {
-                        currentKeys.close();
-                        currentKeys = null;
-                    }
-
                     if (!operationTree.hasNext())
                          return endOfData();
 
@@ -170,8 +164,6 @@ public class QueryPlan
 
         public void close()
         {
-            if (currentKeys != null)
-                FileUtils.closeQuietly(currentKeys);
             FileUtils.closeQuietly(operationTree);
             controller.finish();
         }

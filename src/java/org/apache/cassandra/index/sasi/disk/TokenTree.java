@@ -374,14 +374,11 @@ public class TokenTree
             }
             else
             {
-                try (CloseableIterator<DecoratedKey> mi = o.iterator())
-                {
-                    Iterators.addAll(loadedKeys, mi);
-                }
+                Iterators.addAll(loadedKeys, o.iterator());
             }
         }
 
-        public MergeIterator<DecoratedKey, DecoratedKey> iterator()
+        public Iterator<DecoratedKey> iterator()
         {
             List<Iterator<DecoratedKey>> keys = new ArrayList<>(info.size());
 
@@ -391,7 +388,10 @@ public class TokenTree
             if (!loadedKeys.isEmpty())
                 keys.add(loadedKeys.iterator());
 
-            return MergeIterator.get(keys, DecoratedKey.comparator, new MergeIterator.Reducer<DecoratedKey, DecoratedKey>()
+            if (keys.size() == 1)
+                return keys.get(0);
+
+            return MergeIterator.getUnpooled(keys, DecoratedKey.comparator, new MergeIterator.Reducer<DecoratedKey, DecoratedKey>()
             {
                 DecoratedKey reduced = null;
 

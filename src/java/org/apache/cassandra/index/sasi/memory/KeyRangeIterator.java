@@ -119,17 +119,14 @@ public class KeyRangeIterator extends RangeIterator<Long, Token>
             }
             else
             {
-                try (CloseableIterator<DecoratedKey> iter = o.iterator())
-                {
-                    while (iter.hasNext())
-                        keys.add(iter.next());
-                }
+                for (DecoratedKey key : o)
+                        keys.add(key);
             }
         }
 
-        public CloseableIterator<DecoratedKey> iterator()
+        public Iterator<DecoratedKey> iterator()
         {
-            return FBUtilities.closeableIterator(keys.iterator());
+            return keys.iterator();
         }
     }
 }

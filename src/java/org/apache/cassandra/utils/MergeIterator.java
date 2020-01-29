@@ -154,6 +154,25 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         }
     }
 
+    @SuppressWarnings("resource")
+    public static <In, Out> MergeIterator<In, Out> getUnpooled(List<? extends Iterator<In>> sources,
+                                                               Comparator<? super In> comparator,
+                                                               Reducer<In, Out> reducer)
+    {
+        MergeIterator<In, Out> mi;
+        if (sources.size() == 1)
+        {
+            mi = new OneToOne<>(null);
+            if (reducer.trivialReduceIsTrivial())
+                reducer = null;
+        } else {
+            mi = new ManyToOne<>(sources.size(), null);
+        }
+
+        mi.reset(sources, comparator, reducer);
+        return mi;
+    }
+
     protected void reset(List<? extends Iterator<In>> sources, Comparator<? super In> comparator, Reducer<In, Out> reducer)
     {
         Preconditions.checkState(!active);

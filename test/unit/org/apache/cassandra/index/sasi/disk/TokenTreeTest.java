@@ -351,10 +351,8 @@ public class TokenTreeTest
             }
 
             final Set<Long> offsets = new TreeSet<>();
-            try (CloseableIterator<DecoratedKey> keyIter = tokenA.iterator())
-            {
-                keyIter.forEachRemaining(key -> offsets.add(LongType.instance.compose(key.getKey())));
-            }
+            for (DecoratedKey key : tokenA)
+                offsets.add(LongType.instance.compose(key.getKey()));
 
             Set<Long> expected = new TreeSet<>();
             {
@@ -583,13 +581,13 @@ public class TokenTreeTest
         }
 
         @Override
-        public CloseableIterator<DecoratedKey> iterator()
+        public Iterator<DecoratedKey> iterator()
         {
             List<DecoratedKey> keys = new ArrayList<>(offsets.size());
             for (LongCursor offset : offsets)
                  keys.add(dk(offset.value));
 
-            return FBUtilities.closeableIterator(keys.iterator());
+            return keys.iterator();
         }
     }
 
@@ -605,10 +603,8 @@ public class TokenTreeTest
     private static Set<DecoratedKey> convert(Token results)
     {
         Set<DecoratedKey> keys = new HashSet<>();
-        try (CloseableIterator<DecoratedKey> keyIter = results.iterator())
-        {
-            keyIter.forEachRemaining(keys::add);
-        }
+        for (DecoratedKey result : results)
+            keys.add(result);
 
         return keys;
     }

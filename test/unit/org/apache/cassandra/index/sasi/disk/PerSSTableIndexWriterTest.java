@@ -151,10 +151,8 @@ public class PerSSTableIndexWriterTest extends SchemaLoader
 
             while (tokens.hasNext())
             {
-                try (CloseableIterator<DecoratedKey> keyIter = tokens.next().iterator())
-                {
-                    keyIter.forEachRemaining(actualKeys::add);
-                }
+                for (DecoratedKey key : tokens.next())
+                    actualKeys.add(key);
             }
 
             Assert.assertEquals(count++, (int) Int32Type.instance.compose(term.getTerm()));

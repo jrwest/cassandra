@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.index.sasi.disk;
 
+import java.util.Iterator;
+
 import com.google.common.primitives.Longs;
 
 import org.apache.cassandra.db.DecoratedKey;
@@ -25,7 +27,7 @@ import org.apache.cassandra.index.sasi.utils.CombinedValue;
 import com.carrotsearch.hppc.LongSet;
 import org.apache.cassandra.utils.CloseableIterator;
 
-public abstract class Token implements CombinedValue<Long>
+public abstract class Token implements CombinedValue<Long>, Iterable<DecoratedKey>
 {
     protected final long token;
 
@@ -46,5 +48,5 @@ public abstract class Token implements CombinedValue<Long>
         return Longs.compare(token, ((Token) o).token);
     }
 
-    public abstract CloseableIterator<DecoratedKey> iterator();
+    public abstract Iterator<DecoratedKey> iterator();
 }

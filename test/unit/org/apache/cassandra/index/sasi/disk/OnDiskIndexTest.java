@@ -834,10 +834,8 @@ public class OnDiskIndexTest
 
         while (results.hasNext())
         {
-            try (CloseableIterator<DecoratedKey> keyIter = results.next().iterator())
-            {
-                keyIter.forEachRemaining(keys::add);
-            }
+            for (DecoratedKey key : results.next())
+                keys.add(key);
         }
 
         return keys;
