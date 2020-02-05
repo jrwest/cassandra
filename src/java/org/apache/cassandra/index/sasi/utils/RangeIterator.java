@@ -43,7 +43,7 @@ public abstract class RangeIterator<K extends Comparable<K>, T extends CombinedV
     public RangeIterator(K min, K max, long count)
     {
         if (min == null || max == null || count == 0)
-            assert min == null && max == null && (count == 0 || count == -1);
+            assert min == null && max == null && (count == 0 || count == -1) : "min = " + min + ", max = " + max + ", count = " + count;
 
         this.min = min;
         this.current = min;
