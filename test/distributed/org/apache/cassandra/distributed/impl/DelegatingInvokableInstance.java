@@ -38,7 +38,7 @@ import org.apache.cassandra.distributed.shared.NetworkTopology;
 
 public abstract class DelegatingInvokableInstance implements IInvokableInstance
 {
-    public abstract IInvokableInstance delegate();
+    protected abstract IInvokableInstance delegate();
     protected abstract IInvokableInstance delegateForStartup();
     
     @Override

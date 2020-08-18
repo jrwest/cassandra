@@ -129,7 +129,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
         private volatile Versions.Version version;
         private volatile boolean isShutdown = true;
 
-        public IInvokableInstance delegate()
+        protected IInvokableInstance delegate()
         {
             if (delegate == null)
                 throw new IllegalStateException("Can't use shut down instances, delegate is null");

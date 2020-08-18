@@ -109,7 +109,7 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
         final int partitions = 10;
         final int rowsPerPartition = 10;
 
-        final DropCompactTestHelper helper = new DropCompactTestHelper();
+        final ResultsRecorder recorder = new ResultsRecorder();
         new TestCase()
                 .nodes(2)
                 .upgrade(Versions.Major.v22, Versions.Major.v30)
@@ -126,10 +126,12 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
                         {
                             coordinator.execute(String.format("INSERT INTO %s.%s (key, c1, c2, c3) VALUES (%d, %d, 1, 1)",
                                     KEYSPACE, table, i, j), ConsistencyLevel.ALL);
+                            coordinator.execute(String.format("INSERT INTO %s.%s (key, c1, c2, c3) VALUES (%d, %d, 2, 1)",
+                                                              KEYSPACE, table, i, j), ConsistencyLevel.ALL);
                         }
                     }
 
-                    runQueries(cluster.coordinator(1), helper, new String[] {
+                    runQueries(cluster.coordinator(1), recorder, new String[] {
                             String.format("SELECT * FROM %s.%s", KEYSPACE, table),
 
                             String.format("SELECT * FROM %s.%s WHERE key = %d and c1 = %d",
@@ -144,6 +146,12 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
                             String.format("SELECT * FROM %s.%s WHERE key = %d and c1 = %d and c2 = %d",
                                     KEYSPACE, table, partitions - 4, rowsPerPartition - 9, 1),
 
+                            String.format("SELECT * FROM %s.%s WHERE key = %d and c1 = %d and c2 > %d",
+                                          KEYSPACE, table, partitions - 4, rowsPerPartition - 9, 1),
+
+                            String.format("SELECT * FROM %s.%s WHERE key = %d and c1 = %d and c2 > %d",
+                                          KEYSPACE, table, partitions - 4, rowsPerPartition - 9, 2),
+
                             String.format("SELECT * FROM %s.%s WHERE key = %d and c1 > %d",
                                     KEYSPACE, table, partitions - 8, rowsPerPartition - 3),
 
@@ -157,23 +165,23 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
                     }
 
                     // make sure the results are the same after upgrade and upgrade sstables but before dropping compact storage
-                    validateResults(helper, cluster, 1);
-                    validateResults(helper, cluster, 2);
+                    recorder.validateResults(cluster, 1);
+                    recorder.validateResults(cluster, 2);
 
                     // make sure the results are the same after dropping compact storage on only the first node
                     IMessageFilters.Filter filter = cluster.verbs().allVerbs().to(2).drop();
                     cluster.schemaChange(String.format("ALTER TABLE %s.%s DROP COMPACT STORAGE", KEYSPACE, table), 1);
 
-                    validateResults(helper, cluster, 1, ConsistencyLevel.ONE);
+                    recorder.validateResults(cluster, 1, ConsistencyLevel.ONE);
 
                     filter.off();
-                    validateResults(helper, cluster, 1);
-                    validateResults(helper, cluster, 2);
+                    recorder.validateResults(cluster, 1);
+                    recorder.validateResults(cluster, 2);
 
                     // make sure the results continue to be the same after dropping compact storage on the second node
                     cluster.schemaChange(String.format("ALTER TABLE %s.%s DROP COMPACT STORAGE", KEYSPACE, table), 2);
-                    validateResults(helper, cluster, 1);
-                    validateResults(helper, cluster, 2);
+                    recorder.validateResults(cluster, 1);
+                    recorder.validateResults(cluster, 2);
                 })
                 .run();
     }
@@ -191,7 +199,7 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
                 .upgrade(Versions.Major.v22, Versions.Major.v30)
                 .setup(cluster -> {
                     cluster.schemaChange(String.format(
-                            "CREATE TABLE %s.%s (key int, c1 int, c2 int, PRIMARY KEY (key, c1)) WITH COMPACT STORAGE",
+                            "CREATE TABLE %s.%s (key int, c1 int, c2 int, c3 int, PRIMARY KEY (key, c1, c2)) WITH COMPACT STORAGE",
                             KEYSPACE, table));
                     ICoordinator coordinator = cluster.coordinator(1);
 
@@ -199,8 +207,12 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
                     {
                         for (int j = 1; j <= rowsPerPartition; j++)
                         {
-                            coordinator.execute(String.format("INSERT INTO %s.%s (key, c1, c2) VALUES (%d, %d, 1)",
+                            coordinator.execute(String.format("INSERT INTO %s.%s (key, c1, c2, c3) VALUES (%d, %d, 1, 1)",
                                     KEYSPACE, table, i, j), ConsistencyLevel.ALL);
+                            coordinator.execute(String.format("INSERT INTO %s.%s (key, c1, c2, c3) VALUES (%d, %d, 2, 2)",
+                                                              KEYSPACE, table, i, j), ConsistencyLevel.ALL);
+                            coordinator.execute(String.format("INSERT INTO %s.%s (key, c1, c2, c3) VALUES (%d, %d, 3, 3)",
+                                                              KEYSPACE, table, i, j), ConsistencyLevel.ALL);
                         }
                     }
 
@@ -223,7 +235,7 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
                     {
                         for (int j = 1; j <= rowsPerPartition; j++)
                         {
-                            coordinator.execute(String.format("INSERT INTO %s.%s (key, c1, c2) VALUES (%d, %d, 1)",
+                            coordinator.execute(String.format("INSERT INTO %s.%s (key, c1, c2, c3) VALUES (%d, %d, 1, 1)",
                                     KEYSPACE, table, i, j), ConsistencyLevel.ALL);
                         }
                     }
@@ -234,17 +246,23 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
                     coordinator.execute(String.format("DELETE FROM %s.%s WHERE key = %d",
                             KEYSPACE, table, 1), ConsistencyLevel.ALL);
 
-                    coordinator.execute(String.format("DELETE FROM %s.%s WHERE key = %d and c1 = %d",
-                            KEYSPACE, table, 7, 2), ConsistencyLevel.ALL);
+                    coordinator.execute(String.format("DELETE FROM %s.%s WHERE key = %d and c1 = %d and c2 = %d",
+                            KEYSPACE, table, 7, 2, 2), ConsistencyLevel.ALL);
 
-                    coordinator.execute(String.format("DELETE FROM %s.%s WHERE key = %d and c1 = %d",
-                            KEYSPACE, table, 7, 6), ConsistencyLevel.ALL);
+                    coordinator.execute(String.format("DELETE FROM %s.%s WHERE key = %d and c1 = %d and c2 = %d",
+                            KEYSPACE, table, 7, 6, 1), ConsistencyLevel.ALL);
 
-                    coordinator.execute(String.format("DELETE c2 FROM %s.%s WHERE key = %d and c1 = %d",
-                            KEYSPACE, table, 8, 1), ConsistencyLevel.ALL);
+                    coordinator.execute(String.format("DELETE FROM %s.%s WHERE key = %d and c1 = %d and c2 = %d",
+                                                      KEYSPACE, table, 4, 1, 1), ConsistencyLevel.ALL);
 
-                    DropCompactTestHelper helper = new DropCompactTestHelper();
-                    runQueries(coordinator, helper, new String[] {
+                    coordinator.execute(String.format("DELETE c3 FROM %s.%s WHERE key = %d and c1 = %d and c2 = %d",
+                            KEYSPACE, table, 8, 1, 3), ConsistencyLevel.ALL);
+
+                    coordinator.execute(String.format("DELETE FROM %s.%s WHERE key = %d and c1 = %d and c2 > 1",
+                                                      KEYSPACE, table, 6, 2, 4), ConsistencyLevel.ALL);
+
+                    ResultsRecorder recorder = new ResultsRecorder();
+                    runQueries(coordinator, recorder, new String[] {
                             String.format("SELECT * FROM %s.%s", KEYSPACE, table),
 
                             String.format("SELECT * FROM %s.%s WHERE key = %d and c1 = %d",
@@ -269,6 +287,15 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
                             String.format("SELECT c1, c2 FROM %s.%s WHERE key = %d and c1 = %d",
                                     KEYSPACE, table, 8, 1),
 
+                            String.format("SELECT c1, c2 FROM %s.%s WHERE key = %d and c1 = %d",
+                                          KEYSPACE, table, 8, 1),
+
+                            String.format("SELECT c1, c2 FROM %s.%s WHERE key = %d and c1 = %d",
+                                          KEYSPACE, table, 4, 1),
+
+                            String.format("SELECT c1, c2 FROM %s.%s WHERE key = %d",
+                                          KEYSPACE, table, 6),
+
                             String.format("SELECT * FROM %s.%s WHERE key = %d and c1 > %d",
                                     KEYSPACE, table, 0, 1),
 
@@ -282,36 +309,21 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
 
                     // drop compact storage on remaining node and check result
                     cluster.schemaChange(String.format("ALTER TABLE %s.%s DROP COMPACT STORAGE", KEYSPACE, table), 2);
-                    validateResults(helper, cluster, 1);
-                    validateResults(helper, cluster, 2);
+                    recorder.validateResults(cluster, 1);
+                    recorder.validateResults(cluster, 2);
                 }).run();
     }
 
 
-    public void validateResults(DropCompactTestHelper helper, UpgradeableCluster cluster, int node)
-    {
-        validateResults(helper, cluster, node, ConsistencyLevel.ALL);
-    }
-
-    public void validateResults(DropCompactTestHelper helper, UpgradeableCluster cluster, int node, ConsistencyLevel cl)
-    {
-        for (Map.Entry<String, Object[][]> entry : helper.queriesAndResults().entrySet())
-        {
-            Object[][] postUpgradeResult = cluster.coordinator(node).execute(entry.getKey(), cl);
-            assertRows(postUpgradeResult, entry.getValue());
-        }
-
-    }
-
-    private void runQueries(ICoordinator coordinator, DropCompactTestHelper helper, String[] queries)
+    private void runQueries(ICoordinator coordinator, ResultsRecorder helper, String[] queries)
     {
         for (String query : queries)
             helper.addResult(query, coordinator.execute(query, ConsistencyLevel.ALL));
     }
 
-    public static class DropCompactTestHelper
+    public static class ResultsRecorder
     {
-        private Map<String, Object[][]> preUpgradeResults = new HashMap<>();
+        final private Map<String, Object[][]> preUpgradeResults = new HashMap<>();
 
         public void addResult(String query, Object[][] results)
         {
@@ -321,6 +333,21 @@ public class CompactStorage2to3UpgradeTest extends UpgradeTestBase
         public Map<String, Object[][]> queriesAndResults()
         {
             return preUpgradeResults;
+        }
+
+        public void validateResults(UpgradeableCluster cluster, int node)
+        {
+            validateResults(cluster, node, ConsistencyLevel.ALL);
+        }
+
+        public void validateResults(UpgradeableCluster cluster, int node, ConsistencyLevel cl)
+        {
+            for (Map.Entry<String, Object[][]> entry : queriesAndResults().entrySet())
+            {
+                Object[][] postUpgradeResult = cluster.coordinator(node).execute(entry.getKey(), cl);
+                assertRows(postUpgradeResult, entry.getValue());
+            }
+
         }
     }
 
