@@ -110,7 +110,7 @@ public class GossiperTest
         assertTrue(Gossiper.instance.haveMajorVersion3NodesSupplier.get());
 
         Gossiper.instance.endpointStateMap.remove(InetAddressAndPort.getByName("127.0.0.3"));
-        Gossiper.instance.liveEndpoints.add(InetAddressAndPort.getByName("127.0.0.3"));
+        Gossiper.instance.liveEndpoints.remove(InetAddressAndPort.getByName("127.0.0.3"));
 
         assertFalse(Gossiper.instance.haveMajorVersion3NodesSupplier.get());
 
