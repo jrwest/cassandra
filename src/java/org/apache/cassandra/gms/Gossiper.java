@@ -156,7 +156,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
     private volatile long lastProcessedMessageAt = System.currentTimeMillis();
 
     //This property and anything that checks it should be removed in 5.0
-    private boolean haveMajorVersion3Nodes = true;
+    private volatile boolean haveMajorVersion3Nodes = true;
 
     final com.google.common.base.Supplier<Boolean> haveMajorVersion3NodesSupplier = () ->
     {
