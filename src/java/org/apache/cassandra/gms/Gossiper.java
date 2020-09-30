@@ -186,8 +186,6 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         return false;
     };
 
-    private final Supplier<Boolean> haveMajorVersion3NodesMemoized = Suppliers.memoizeWithExpiration(haveMajorVersion3NodesSupplier, 1, TimeUnit.MINUTES);
-
     private static final boolean disableThreadValidation = Boolean.getBoolean(Props.DISABLE_THREAD_VALIDATION);
 
     private static long getVeryLongTime()
@@ -2037,7 +2035,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
 
     public boolean haveMajorVersion3Nodes()
     {
-        return haveMajorVersion3NodesMemoized.get();
+        return haveMajorVersion3NodesSupplier.get();
     }
 
     private boolean nodesAgreeOnSchema(Collection<InetAddressAndPort> nodes)
