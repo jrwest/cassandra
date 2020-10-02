@@ -27,7 +27,6 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
-import org.apache.cassandra.distributed.api.Feature;
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
@@ -43,20 +42,6 @@ import static org.junit.Assert.fail;
 // TODO: this test should be removed after running in-jvm dtests is set up via the shared API repository
 public class SimpleReadWriteTest extends TestBaseImpl
 {
-
-    @Test
-    // see CASSANDRA-15833 and CASSANDRA-16148
-    public void test15833() throws Throwable
-    {
-        try (Cluster cluster = init(Cluster.build(2).start()))
-        {
-            cluster.schemaChange(withKeyspace("CREATE TABLE %s.t (k int PRIMARY KEY, a int, b int)"));
-            cluster.get(1).executeInternal(withKeyspace("INSERT INTO %s.t (k, a, b) VALUES (1, 2, 3)"));
-            assertRows(cluster.coordinator(1).execute(withKeyspace("SELECT a FROM %s.t"), ConsistencyLevel.ALL), row(2));
-            assertRows( cluster.get(2).executeInternal(withKeyspace("SELECT * FROM %s.t")), row(1, 2, null));
-        }
-    }
-
     @Test
     public void coordinatorReadTest() throws Throwable
     {
