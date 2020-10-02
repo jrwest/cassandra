@@ -29,7 +29,6 @@ import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -44,6 +43,7 @@ import org.apache.cassandra.net.NoPayload;
 import org.apache.cassandra.net.Verb;
 import org.apache.cassandra.utils.CassandraVersion;
 import org.apache.cassandra.utils.ExecutorUtils;
+import org.apache.cassandra.utils.ExpiringMemoizingSupplier;
 import org.apache.cassandra.utils.MBeanWrapper;
 import org.apache.cassandra.utils.NoSpamLogger;
 import org.apache.cassandra.utils.Pair;
@@ -156,13 +156,13 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
     private volatile long lastProcessedMessageAt = System.currentTimeMillis();
 
     //This property and anything that checks it should be removed in 5.0
-    private volatile boolean haveMajorVersion3Nodes = true;
+    private boolean haveMajorVersion3Nodes = true;
 
-    final com.google.common.base.Supplier<Boolean> haveMajorVersion3NodesSupplier = () ->
+    final Supplier<ExpiringMemoizingSupplier.ReturnValue<Boolean>> haveMajorVersion3NodesSupplier = () ->
     {
         //Once there are no prior version nodes we don't need to keep rechecking
         if (!haveMajorVersion3Nodes)
-            return false;
+            return new ExpiringMemoizingSupplier.Memoized<>(false);
 
         Iterable<InetAddressAndPort> allHosts = Iterables.concat(Gossiper.instance.getLiveMembers(), Gossiper.instance.getUnreachableMembers());
         CassandraVersion referenceVersion = null;
@@ -173,18 +173,20 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
 
             //Raced with changes to gossip state, wait until next iteration
             if (version == null)
-                return true;
+                return new ExpiringMemoizingSupplier.NotMemoized(true);
 
             if (referenceVersion == null)
                 referenceVersion = version;
 
             if (version.major < 4)
-                return true;
+                return new ExpiringMemoizingSupplier.Memoized<>(true);
         }
 
         haveMajorVersion3Nodes = false;
-        return false;
+        return new ExpiringMemoizingSupplier.Memoized(false);
     };
+
+    private Supplier<Boolean> haveMajorVersion3NodesMemoized = ExpiringMemoizingSupplier.memoizeWithExpiration(haveMajorVersion3NodesSupplier, 1, TimeUnit.MINUTES);
 
     private static final boolean disableThreadValidation = Boolean.getBoolean(Props.DISABLE_THREAD_VALIDATION);
 
@@ -2035,7 +2037,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
 
     public boolean haveMajorVersion3Nodes()
     {
-        return haveMajorVersion3NodesSupplier.get();
+        return haveMajorVersion3NodesMemoized.get();
     }
 
     private boolean nodesAgreeOnSchema(Collection<InetAddressAndPort> nodes)
