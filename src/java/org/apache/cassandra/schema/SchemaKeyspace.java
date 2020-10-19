@@ -892,7 +892,7 @@ public final class SchemaKeyspace
                 {
                     messages.append(String.format("ALTER TABLE %s.%s DROP COMPACT STORAGE;\n",
                                                   maybeQuote(row.getString("keyspace_name")),
-                                                  maybeQuote(row.getString("table_name"))));
+                                                  maybeQuote(tableName)));
                 }
             }
         }
@@ -910,6 +910,9 @@ public final class SchemaKeyspace
 
     private static boolean isSafeToDropCompactStorage(String keyspaceName, String tableName)
     {
+        if (!Boolean.parseBoolean(System.getProperty("cassandra.auto_drop_compact_storage", "false")))
+            return false;
+
         String columnQuery = String.format("SELECT kind, type FROM %s.%s WHERE keyspace_name='%s' and table_name='%s'",
                                            SchemaConstants.SCHEMA_KEYSPACE_NAME, COLUMNS, keyspaceName, tableName);
 

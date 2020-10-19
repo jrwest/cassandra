@@ -55,6 +55,7 @@ public class CompactStorage3to4UpgradeTest extends UpgradeTestBase
     @Test
     public void ignoreDenseCompoundTablesWithValueColumn() throws Throwable
     {
+        System.setProperty("cassandra.auto_drop_compact_storage", "true");
         final int partitions = 10;
         final int rowsPerPartition = 10;
 
