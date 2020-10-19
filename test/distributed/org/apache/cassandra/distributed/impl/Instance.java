@@ -417,7 +417,8 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                 DatabaseDescriptor.createAllDirectories();
                 CommitLog.instance.start();
 
-                try {
+                try
+                {
                     new StartupChecks().withDefaultTests().verify();
                 } catch (StartupException e)
                 {

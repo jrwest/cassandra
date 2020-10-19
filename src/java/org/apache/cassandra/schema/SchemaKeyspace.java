@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.schema;
 
-import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.util.*;
@@ -879,7 +878,7 @@ public final class SchemaKeyspace
                 {
                     flags.remove(TableMetadata.Flag.DENSE);
                     flags.add(TableMetadata.Flag.COMPOUND);
-                     String update = String.format("UPDATE %s.%s SET flags={%s} WHERE keyspace_name='%s' AND table_name='%s'",
+                    String update = String.format("UPDATE %s.%s SET flags={%s} WHERE keyspace_name='%s' AND table_name='%s'",
                                                   SchemaConstants.SCHEMA_KEYSPACE_NAME, TABLES,
                                                   TableMetadata.Flag.toStringSet(flags).stream()
                                                                                        .map(f -> "'" + f + "'")
