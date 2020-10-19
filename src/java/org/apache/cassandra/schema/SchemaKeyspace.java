@@ -885,6 +885,7 @@ public final class SchemaKeyspace
                                                                                        .collect(Collectors.joining(", ")),
                                                   keyspaceName, tableName);
 
+                    logger.info("Safely dropping COMPACT STORAGE on {}.{}", keyspaceName, tableName);
                     executeInternal(update);
                 }
                 else
