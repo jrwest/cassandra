@@ -156,10 +156,12 @@ public abstract class Cells
 
         Conflicts.Resolution res = Conflicts.resolveRegular(c1.timestamp(),
                                                             c1.isLive(nowInSec),
+                                                            c1.ttl(),
                                                             c1.localDeletionTime(),
                                                             c1.value(),
                                                             c2.timestamp(),
                                                             c2.isLive(nowInSec),
+                                                            c2.ttl(),
                                                             c2.localDeletionTime(),
                                                             c2.value());
         assert res != Conflicts.Resolution.MERGE;

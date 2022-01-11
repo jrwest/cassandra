@@ -29,10 +29,12 @@ public abstract class Conflicts
 
     public static Resolution resolveRegular(long leftTimestamp,
                                             boolean leftLive,
+                                            int leftTTL,
                                             int leftLocalDeletionTime,
                                             ByteBuffer leftValue,
                                             long rightTimestamp,
                                             boolean rightLive,
+                                            int rightTTL,
                                             int rightLocalDeletionTime,
                                             ByteBuffer rightValue)
     {
@@ -49,7 +51,15 @@ public abstract class Conflicts
             return Resolution.LEFT_WINS;
 
         // Prefer the longest ttl if relevant
-        return leftLocalDeletionTime < rightLocalDeletionTime ? Resolution.RIGHT_WINS : Resolution.LEFT_WINS;
+        if (leftLocalDeletionTime < rightLocalDeletionTime)
+            return Resolution.RIGHT_WINS;
+        else if (leftLocalDeletionTime > rightLocalDeletionTime)
+            return Resolution.LEFT_WINS;
+
+        // if all is equal choose the SMALLEST ttl
+        // the smallest ttl is chosen because if the localDeletionTimes are equal
+        // the smaller ttl was written more recently
+        return leftTTL < rightTTL ? Resolution.LEFT_WINS : Resolution.RIGHT_WINS;
     }
 
     public static Resolution resolveCounter(long leftTimestamp,
