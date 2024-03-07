@@ -68,10 +68,12 @@ public class BigTableScanner implements ISSTableScanner
 
     protected Iterator<UnfilteredRowIterator> iterator;
 
+    private boolean useFullRangeScan;
+
     // Full scan of the sstables
     public static ISSTableScanner getScanner(SSTableReader sstable)
     {
-        return getScanner(sstable, Iterators.singletonIterator(fullRange(sstable)));
+        return getScanner(sstable, Iterators.singletonIterator(fullRange(sstable)), true);
     }
 
     public static ISSTableScanner getScanner(SSTableReader sstable,
@@ -79,7 +81,7 @@ public class BigTableScanner implements ISSTableScanner
                                              DataRange dataRange,
                                              SSTableReadsListener listener)
     {
-        return new BigTableScanner(sstable, columns, dataRange, makeBounds(sstable, dataRange).iterator(), listener);
+        return new BigTableScanner(sstable, columns, dataRange, makeBounds(sstable, dataRange).iterator(), listener, false);
     }
 
     public static ISSTableScanner getScanner(SSTableReader sstable, Collection<Range<Token>> tokenRanges)
@@ -89,19 +91,25 @@ public class BigTableScanner implements ISSTableScanner
         if (positions.isEmpty())
             return new EmptySSTableScanner(sstable);
 
-        return getScanner(sstable, makeBounds(sstable, tokenRanges).iterator());
+        return getScanner(sstable, makeBounds(sstable, tokenRanges).iterator(), false);
     }
 
     public static ISSTableScanner getScanner(SSTableReader sstable, Iterator<AbstractBounds<PartitionPosition>> rangeIterator)
     {
-        return new BigTableScanner(sstable, ColumnFilter.all(sstable.metadata()), null, rangeIterator, SSTableReadsListener.NOOP_LISTENER);
+        return getScanner(sstable, rangeIterator, false);
+    }
+
+    public static ISSTableScanner getScanner(SSTableReader sstable, Iterator<AbstractBounds<PartitionPosition>> rangeIterator, boolean useFullRangeScan)
+    {
+        return new BigTableScanner(sstable, ColumnFilter.all(sstable.metadata()), null, rangeIterator, SSTableReadsListener.NOOP_LISTENER, useFullRangeScan);
     }
 
     private BigTableScanner(SSTableReader sstable,
                             ColumnFilter columns,
                             DataRange dataRange,
                             Iterator<AbstractBounds<PartitionPosition>> rangeIterator,
-                            SSTableReadsListener listener)
+                            SSTableReadsListener listener,
+                            boolean useFullRangeScan)
     {
         assert sstable != null;
 
@@ -115,6 +123,7 @@ public class BigTableScanner implements ISSTableScanner
                                                                                                         sstable.header);
         this.rangeIterator = rangeIterator;
         this.listener = listener;
+        this.useFullRangeScan = useFullRangeScan;
     }
 
     private static List<AbstractBounds<PartitionPosition>> makeBounds(SSTableReader sstable, Collection<Range<Token>> tokenRanges)
@@ -276,7 +285,10 @@ public class BigTableScanner implements ISSTableScanner
     private Iterator<UnfilteredRowIterator> createIterator()
     {
         this.listener.onScanningStarted(sstable);
-        return new KeyScanningIterator();
+        if (useFullRangeScan)
+            return new FullRangeScanningIterator();
+        else
+            return new KeyScanningIterator();
     }
 
     protected class KeyScanningIterator extends AbstractIterator<UnfilteredRowIterator>
@@ -377,6 +389,48 @@ public class BigTableScanner implements ISSTableScanner
             }
             catch (CorruptSSTableException | IOException e)
             {
+                sstable.markSuspect();
+                throw new CorruptSSTableException(e, sstable.getFilename());
+            }
+        }
+    }
+
+    protected class FullRangeScanningIterator extends AbstractIterator<UnfilteredRowIterator>
+    {
+        private UnfilteredRowIterator lastIterator;
+        FullRangeScanningIterator()
+        {
+            assert dataRange == null;
+        }
+
+        @Override
+        protected UnfilteredRowIterator computeNext()
+        {
+            if (lastIterator != null && lastIterator.hasNext()) {
+                do {
+                    lastIterator.next();
+                } while (lastIterator.hasNext());
+            }
+
+            try
+            {
+                startScan = dfile.getFilePointer();
+                if (dfile.isEOF())
+                    return endOfData();
+
+                DecoratedKey currentKey = sstable.decorateKey(ByteBufferUtil.readWithShortLength(dfile));
+                lastIterator = new LazilyInitializedUnfilteredRowIterator(currentKey)
+                {
+                    @Override
+                    protected UnfilteredRowIterator initializeIterator()
+                    {
+                        return SSTableIdentityIterator.create(sstable, dfile, partitionKey());
+                    }
+                };
+
+                return lastIterator;
+
+            } catch (CorruptSSTableException | IOException e) {
                 sstable.markSuspect();
                 throw new CorruptSSTableException(e, sstable.getFilename());
             }
