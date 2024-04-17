@@ -1429,6 +1429,18 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         result.put("15minute", String.format("%.3f", rate.getFifteenMinuteRate() / ONE_MIB));
         return result;
     }
+    @Override
+    public int getCompressedReadAheadBufferInKB()
+    {
+        return DatabaseDescriptor.getCompressedReadAheadBufferSizeInKB();
+    }
+
+    @Override
+    public void setCompressedReadAheadBufferInKB(int sizeInKb)
+    {
+        DatabaseDescriptor.setCompressedReadAheadBufferSizeInKb(sizeInKb);
+        logger.info("set compressed read ahead buffer size to {}KiB", sizeInKb);
+    }
 
     public int getBatchlogReplayThrottleInKB()
     {
