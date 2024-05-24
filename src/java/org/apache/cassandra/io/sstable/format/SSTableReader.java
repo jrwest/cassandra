@@ -1883,6 +1883,11 @@ public abstract class SSTableReader extends SSTable implements UnfilteredSource,
         return dfile.createReader(limiter);
     }
 
+    public RandomAccessReader openDataReaderForScan()
+    {
+        return dfile.createReaderForScan();
+    }
+
     public RandomAccessReader openDataReader()
     {
         return dfile.createReader();

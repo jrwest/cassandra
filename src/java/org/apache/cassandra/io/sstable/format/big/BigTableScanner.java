@@ -105,7 +105,7 @@ public class BigTableScanner implements ISSTableScanner
     {
         assert sstable != null;
 
-        this.dfile = sstable.openDataReader();
+        this.dfile = sstable.openDataReaderForScan(); // TODO (jwest): should only be the case sometimes, otherwise use openDataReader()
         this.ifile = sstable.openIndexReader();
         this.sstable = sstable;
         this.columns = columns;
