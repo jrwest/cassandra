@@ -153,7 +153,8 @@ public abstract class CompressedChunkReader extends AbstractReaderFileProxy impl
                             else
                                 copied += readAheadBuffer.read(compressed, readAheadBuffer.remaining());
                         }
-                    } else
+                    }
+                    else
                     {
                         if (channel.read(compressed, chunk.offset) != length)
                             throw new CorruptBlockException(channel.filePath(), chunk);
