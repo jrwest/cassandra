@@ -36,11 +36,11 @@ public final class ThreadLocalReadAheadBuffer
 
     private static final Map<String, FastThreadLocal<ByteBuffer>> blockBufferHolders = new ConcurrentHashMap<>();
 
-    private static final Map<String, FastThreadLocal<Integer>> storedBlockNos = new ConcurrentHashMap<>();
+    private static final Map<String, FastThreadLocal<Integer>> currentBlocks = new ConcurrentHashMap<>();
 
     private final FastThreadLocal<ByteBuffer> blockBufferHolder;
 
-    private final FastThreadLocal<Integer> storedBlockNo;
+    private final FastThreadLocal<Integer> currentBlock;
 
     private final int bufferSize;
 
@@ -57,7 +57,7 @@ public final class ThreadLocalReadAheadBuffer
                 return null;
             }
         });
-        storedBlockNos.putIfAbsent(channel.filePath(), new FastThreadLocal<>() {
+        currentBlocks.putIfAbsent(channel.filePath(), new FastThreadLocal<>() {
             @Override
             protected Integer initialValue() throws Exception
             {
@@ -65,7 +65,7 @@ public final class ThreadLocalReadAheadBuffer
             }
         });
         blockBufferHolder = blockBufferHolders.get(channel.filePath());
-        storedBlockNo = storedBlockNos.get(channel.filePath());
+        currentBlock = currentBlocks.get(channel.filePath());
     }
 
     public boolean hasBuffer()
@@ -100,7 +100,7 @@ public final class ThreadLocalReadAheadBuffer
         int blockNo = (int) (realPosition / blockLength);
         long blockPosition = blockNo * blockLength;
 
-        if (storedBlockNo.get() != blockNo)
+        if (currentBlock.get() != blockNo)
         {
             long remaining = channelSize - realPosition;
             int sizeToRead = (int) Math.min(remaining, blockLength);
@@ -110,7 +110,7 @@ public final class ThreadLocalReadAheadBuffer
             if (channel.read(blockBuffer, blockPosition) != sizeToRead)
                 throw new CorruptSSTableException(null, channel.filePath());
 
-            storedBlockNo.set(blockNo);
+            currentBlock.set(blockNo);
         }
 
         blockBuffer.flip();
@@ -131,7 +131,7 @@ public final class ThreadLocalReadAheadBuffer
 
     public void clear(boolean deallocate)
     {
-        storedBlockNo.remove();
+        currentBlock.remove();
 
         ByteBuffer blockBuffer = blockBufferHolder.get();
         if (blockBuffer != null)
@@ -149,6 +149,6 @@ public final class ThreadLocalReadAheadBuffer
     {
         clear(true);
         blockBufferHolders.remove(channel.filePath(), blockBufferHolder);
-        storedBlockNos.remove(channel.filePath(), storedBlockNo);
+        currentBlocks.remove(channel.filePath(), currentBlock);
     }
 }
