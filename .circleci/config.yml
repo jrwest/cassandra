@@ -114,7 +114,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -807,7 +807,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1202,7 +1202,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1635,7 +1635,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1833,7 +1833,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -2435,7 +2435,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -2543,7 +2543,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -5440,7 +5440,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -6137,7 +6137,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 100
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -6599,7 +6599,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -6888,7 +6888,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -7060,7 +7060,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -7286,7 +7286,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -7394,7 +7394,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -7620,7 +7620,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -8111,7 +8111,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -8260,7 +8260,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -8345,7 +8345,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -8993,7 +8993,7 @@ jobs:
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 50
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
