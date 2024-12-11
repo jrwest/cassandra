@@ -44,6 +44,7 @@
                  <exclude name=".asf.yaml"/>
                  <exclude name=".java-version"/>
                  <exclude name=".python-version"/>
+                 <exclude name=".sdkmanrc"/>		 
                  <exclude name="**/cassandra*.yaml"/>
                  <exclude name="conf/metrics-reporter-config-sample.yaml"/>
                  <exclude NAME="doc/antora.yml"/>
