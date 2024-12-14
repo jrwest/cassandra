@@ -124,6 +124,13 @@ public abstract class CompressedChunkReader extends AbstractReaderFileProxy impl
         }
 
         @Override
+        public void releaseUnderlyingResources()
+        {
+            if (readAheadBuffer != null)
+                readAheadBuffer.clear(true);
+        }
+
+        @Override
         public void readChunk(long position, ByteBuffer uncompressed)
         {
             try
