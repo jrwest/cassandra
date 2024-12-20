@@ -100,11 +100,10 @@ public final class ThreadLocalReadAheadBuffer
         int blockNo = (int) (realPosition / blockLength);
         long blockPosition = blockNo * blockLength;
 
+        long remaining = channelSize - blockPosition;
+        int sizeToRead = (int) Math.min(remaining, blockLength);
         if (currentBlock.get() != blockNo)
         {
-            long remaining = channelSize - realPosition;
-            int sizeToRead = (int) Math.min(remaining, blockLength);
-
             blockBuffer.flip();
             blockBuffer.limit(sizeToRead);
             if (channel.read(blockBuffer, blockPosition) != sizeToRead)
@@ -114,7 +113,7 @@ public final class ThreadLocalReadAheadBuffer
         }
 
         blockBuffer.flip();
-        blockBuffer.limit((int) blockLength);
+        blockBuffer.limit(sizeToRead);
         blockBuffer.position((int) (realPosition - blockPosition));
     }
 
